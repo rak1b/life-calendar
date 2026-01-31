@@ -32,7 +32,7 @@ HTML_FILE = BASE_DIR / 'lifecalendar.html'
 
 def find_browser():
     """Find available Chromium/Chrome browser"""
-    browsers = ['chromium', 'google-chrome', 'chromium-browser', 'chrome']
+    browsers = ['chromium', 'google-chrome', 'google-chrome-stable', 'chromium-browser', 'chrome']
     for browser in browsers:
         if shutil.which(browser):
             return browser

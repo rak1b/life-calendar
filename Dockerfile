@@ -4,36 +4,26 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including Chromium and required libraries
-RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-driver \
+# Install system dependencies and Google Chrome (more reliable than Chromium)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wget \
+    gnupg \
+    ca-certificates \
     fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgdk-pixbuf2.0-0 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-dejavu-core \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends google-chrome-stable && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Create symlink for chromium (some systems expect 'google-chrome' or 'chromium-browser')
-RUN ln -s /usr/bin/chromium /usr/bin/google-chrome && \
-    ln -s /usr/bin/chromium /usr/bin/chromium-browser && \
-    ln -s /usr/bin/chromium /usr/bin/chrome
+# Create symlinks so the API server can find Chrome/Chromium
+RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome && \
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium && \
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium-browser && \
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome
 
 # Copy requirements file
 COPY requirements_api.txt .
