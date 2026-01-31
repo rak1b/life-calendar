@@ -50,7 +50,10 @@ def generate_image(html_path, output_path, width, height):
     cmd = [
         browser,
         '--headless',
+        '--no-sandbox',
         '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-software-rasterizer',
         f'--window-size={width},{height}',
         '--hide-scrollbars',
         '--disable-web-security',
@@ -225,4 +228,10 @@ if __name__ == '__main__':
     print("  GET /health - Health check")
     print("\nStarting server on http://0.0.0.0:5000")
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Use production WSGI server in Docker, development server otherwise
+    import os
+    if os.getenv('FLASK_ENV') == 'production':
+        from waitress import serve
+        serve(app, host='0.0.0.0', port=5000)
+    else:
+        app.run(host='0.0.0.0', port=5000, debug=True)

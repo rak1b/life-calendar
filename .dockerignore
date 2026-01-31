@@ -20,13 +20,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Project specific - keep only what we need
 *.png
 *.sh
-*.md
-*.py
-requirements*.txt
-api_server.py
+lifecalender*.py
+set_html_wallpaper.sh
 
 # Git
 .git/
