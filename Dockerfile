@@ -4,26 +4,46 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies and Google Chrome (more reliable than Chromium)
+# Install system dependencies including unzip
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
-    gnupg \
+    unzip \
     ca-certificates \
     fonts-liberation \
     fonts-dejavu-core \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends google-chrome-stable && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    libatspi2.0-0 \
+    libgtk-3-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create symlinks so the API server can find Chrome/Chromium
-RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome && \
-    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium && \
-    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium-browser && \
-    ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome
+# Download and install Chromium from official snapshots
+# Get the latest stable version number first, then download
+RUN CHROMIUM_VERSION=$(wget -q -O - "https://www.googleapis.com/download/storage/v1/b/chromium-browser-snapshots/o/Linux_x64%2FLAST_CHANGE?alt=media") && \
+    echo "Installing Chromium version: $CHROMIUM_VERSION" && \
+    wget -q "https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/${CHROMIUM_VERSION}/chrome-linux.zip" -O /tmp/chrome.zip && \
+    unzip -q /tmp/chrome.zip -d /opt/ && \
+    rm /tmp/chrome.zip && \
+    if [ -d /opt/chrome-linux ]; then \
+        mv /opt/chrome-linux /opt/chromium; \
+    else \
+        echo "ERROR: Chrome extraction failed" && exit 1; \
+    fi && \
+    chmod +x /opt/chromium/chrome && \
+    ln -sf /opt/chromium/chrome /usr/bin/chromium && \
+    ln -sf /opt/chromium/chrome /usr/bin/chromium-browser && \
+    ln -sf /opt/chromium/chrome /usr/bin/google-chrome && \
+    ln -sf /opt/chromium/chrome /usr/bin/chrome && \
+    /opt/chromium/chrome --version || echo "Chromium installed but version check failed"
 
 # Copy requirements file
 COPY requirements_api.txt .
