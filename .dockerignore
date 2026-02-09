@@ -22,6 +22,7 @@ Thumbs.db
 
 # Project specific — only api_server.py, lifecalendar.html, requirements go into Docker
 *.png
+*.sh
 lifecalender.py
 requirements.txt
 *.md

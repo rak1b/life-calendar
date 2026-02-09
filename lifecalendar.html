@@ -15,7 +15,8 @@
             width: 100vw;
             height: 100vh;
             overflow: hidden;
-            background: #060609;
+            /* Fallback if theme JS fails */
+            background: radial-gradient(1200px 800px at 50% 20%, #0b1020 0%, #060609 55%, #050507 100%);
             position: fixed;
             inset: 0;
         }
@@ -37,6 +38,16 @@
         .bg-base { background: var(--bg-gradient); }
         .bg-orbs { background: var(--bg-orbs); }
 
+        /* Subtle grid: adds depth without looking busy */
+        .bg-grid {
+            opacity: 0.10;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+            background-size: 80px 80px;
+            mix-blend-mode: overlay;
+        }
+
         .bg-noise {
             opacity: 0.025;
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
@@ -51,12 +62,15 @@
             align-items: center;
             justify-content: center;
             padding: 40px 52px;
-            background: rgba(8, 8, 14, 0.50);
+            /* Glass with subtle tint so it feels integrated with the gradient */
+            background: rgba(10, 10, 18, 0.52);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 20px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            box-shadow:
+                0 10px 40px rgba(0, 0, 0, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
             max-width: 98vw;
             max-height: 96vh;
             overflow: hidden;
@@ -127,7 +141,10 @@
 
         .dot.today {
             background: var(--today-color);
-            box-shadow: 0 0 8px rgba(var(--today-rgb), 0.3);
+            /* Softer halo so it reads as \"today\" without neon glare */
+            box-shadow:
+                0 0 10px rgba(var(--today-rgb), 0.25),
+                0 0 18px rgba(var(--today-rgb), 0.12);
             transform: scale(1.08);
             border-radius: calc(var(--dot-radius, 4px) + 1px);
         }
@@ -224,6 +241,7 @@
 <body style="background: #060609 !important;">
     <div class="bg-layer bg-base"></div>
     <div class="bg-layer bg-orbs"></div>
+    <div class="bg-layer bg-grid"></div>
     <div class="bg-layer bg-noise"></div>
 
     <div class="container">
@@ -268,8 +286,27 @@
 
             function rn(min, max) { return min + Math.random() * (max - min); }
 
-            // Base hue — fully random each time
-            const baseHue = Math.random() * 360;
+            // Base hue — choose from \"eye-soothing\" dark-UI ranges (weighted)
+            // Research-backed theme families commonly used in dark UIs:
+            // - blue/cyan/indigo/violet (calm, readable, low fatigue)
+            // - occasional rose (sparingly, for variety)
+            function pickHueFromRanges() {
+                const ranges = [
+                    { from: 190, to: 230, w: 0.32 }, // cyan → blue
+                    { from: 230, to: 270, w: 0.34 }, // indigo
+                    { from: 270, to: 310, w: 0.24 }, // violet
+                    { from: 140, to: 175, w: 0.06 }, // forest/teal (rare)
+                    { from: 320, to: 350, w: 0.04 }, // rose (very rare)
+                ];
+                const r = Math.random();
+                let acc = 0;
+                for (const item of ranges) {
+                    acc += item.w;
+                    if (r <= acc) return rn(item.from, item.to);
+                }
+                return rn(230, 270);
+            }
+            const baseHue = pickHueFromRanges();
 
             // Color harmony strategy
             const strategies = ['analogous', 'complementary', 'triadic', 'split', 'monochrome'];
@@ -303,20 +340,25 @@
             const todayHue = (baseHue + rn(30, 70)) % 360;
             const todayRgb = hslToRgb(todayHue, 0.58, 0.56);
 
-            // Background gradient — very dark with subtle tint
-            const bg1 = hslToRgb(baseHue, rn(0.10, 0.20), rn(0.035, 0.055));
-            const bg2 = hslToRgb((baseHue + 12) % 360, rn(0.10, 0.20), rn(0.04, 0.06));
-            const bg3 = hslToRgb((baseHue - 8 + 360) % 360, rn(0.08, 0.16), rn(0.02, 0.04));
+            // Background gradient — still dark, but more \"obviously\" a gradient
+            // (previous values were so close they looked black on many screens)
+            const bgTL = hslToRgb((baseHue - rn(8, 18) + 360) % 360, rn(0.18, 0.30), rn(0.060, 0.095));
+            const bgTR = hslToRgb((baseHue + rn(8, 22)) % 360, rn(0.18, 0.30), rn(0.055, 0.090));
+            const bgBL = hslToRgb((baseHue + rn(18, 38)) % 360, rn(0.14, 0.24), rn(0.030, 0.060));
+            const bgBR = hslToRgb((baseHue - rn(18, 38) + 360) % 360, rn(0.14, 0.24), rn(0.028, 0.055));
 
-            // Orb colors — very subtle atmospheric glow
-            const orb1 = hslToRgb(accentHues[0], rn(0.35, 0.50), rn(0.30, 0.40));
-            const orb2 = hslToRgb(accentHues[1 % accentHues.length], rn(0.30, 0.45), rn(0.25, 0.35));
+            // Orb colors — subtle, but present enough to feel \"premium\"
+            const orb1 = hslToRgb(accentHues[0], rn(0.40, 0.55), rn(0.34, 0.44));
+            const orb2 = hslToRgb(accentHues[1 % accentHues.length], rn(0.36, 0.50), rn(0.30, 0.40));
 
             return {
-                bgGradient: `linear-gradient(145deg, rgb(${bg1}) 0%, rgb(${bg2}) 55%, rgb(${bg3}) 100%)`,
+                bgGradient: `
+                    radial-gradient(900px 700px at 50% 18%, rgba(${orb1}, 0.10) 0%, transparent 60%),
+                    linear-gradient(135deg, rgb(${bgTL}) 0%, rgb(${bgTR}) 38%, rgb(${bgBL}) 72%, rgb(${bgBR}) 100%)
+                `,
                 bgOrbs: `
-                    radial-gradient(ellipse 70% 50% at 25% 35%, rgba(${orb1}, 0.08) 0%, transparent 50%),
-                    radial-gradient(ellipse 55% 40% at 75% 65%, rgba(${orb2}, 0.06) 0%, transparent 50%)
+                    radial-gradient(ellipse 70% 52% at 18% 35%, rgba(${orb1}, 0.10) 0%, transparent 56%),
+                    radial-gradient(ellipse 60% 45% at 82% 62%, rgba(${orb2}, 0.08) 0%, transparent 58%)
                 `,
                 filled: filled,
                 today: { hex: hex(...todayRgb), rgb: todayRgb.join(', ') },
