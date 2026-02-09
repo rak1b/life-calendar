@@ -259,9 +259,18 @@
         // =========================================================
         // RANDOM COLOR THEME — fresh unique palette every request
         // Dark-based design with muted, sophisticated dot colors
+        // Uses seeded RNG to ensure unique colors per request
         // =========================================================
 
         function generateTheme() {
+            // Seeded random number generator (Park-Miller LCG)
+            // Seed with timestamp + random offset to ensure uniqueness per request
+            let seed = Date.now() + Math.random() * 1000000;
+            function seededRandom() {
+                seed = (seed * 16807 + 12345) % 2147483647;
+                return (seed & 0x7fffffff) / 2147483647;
+            }
+
             // HSL → RGB
             function hslToRgb(h, s, l) {
                 h = ((h % 360) + 360) % 360;
@@ -284,7 +293,7 @@
                 return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
             }
 
-            function rn(min, max) { return min + Math.random() * (max - min); }
+            function rn(min, max) { return min + seededRandom() * (max - min); }
 
             // Base hue — choose from \"eye-soothing\" dark-UI ranges (weighted)
             // Research-backed theme families commonly used in dark UIs:
@@ -298,7 +307,7 @@
                     { from: 140, to: 175, w: 0.06 }, // forest/teal (rare)
                     { from: 320, to: 350, w: 0.04 }, // rose (very rare)
                 ];
-                const r = Math.random();
+                const r = seededRandom();
                 let acc = 0;
                 for (const item of ranges) {
                     acc += item.w;
@@ -310,7 +319,7 @@
 
             // Color harmony strategy
             const strategies = ['analogous', 'complementary', 'triadic', 'split', 'monochrome'];
-            const strategy = strategies[Math.floor(Math.random() * strategies.length)];
+            const strategy = strategies[Math.floor(seededRandom() * strategies.length)];
 
             let accentHues;
             if (strategy === 'analogous') {

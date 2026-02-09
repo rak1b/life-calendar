@@ -277,7 +277,7 @@ class LifeCalendarGenerator:
             y_coords, x_coords = np.mgrid[0:self.height, 0:self.width].astype(np.float32)
             nx = x_coords / self.width
             ny = y_coords / self.height
-
+            
             top    = tl_a[:, None, None] * (1 - nx) + tr_a[:, None, None] * nx
             bottom = bl_a[:, None, None] * (1 - nx) + br_a[:, None, None] * nx
             color  = top * (1 - ny) + bottom * ny
@@ -288,7 +288,7 @@ class LifeCalendarGenerator:
             dist = np.sqrt((x_coords - cx) ** 2 + (y_coords - cy) ** 2)
             vignette = 1.0 - (dist / max_dist) * 0.10
             color = color * vignette
-
+            
             # Gentle center brightening (8%)
             glow = 1.0 + (1.0 - dist / max_dist) * 0.08
             color = np.clip(color * glow, 0, 255)
@@ -296,7 +296,7 @@ class LifeCalendarGenerator:
             # Very subtle noise for organic texture
             noise = np.random.normal(1.0, 0.015, (3, self.height, self.width)).astype(np.float32)
             color = np.clip(color * noise, 0, 255)
-
+            
             img_array = color.transpose(1, 2, 0).astype(np.uint8)
             return Image.fromarray(img_array, 'RGB')
         else:
@@ -393,7 +393,7 @@ class LifeCalendarGenerator:
             for col in range(grid_cols):
                 if dot_idx >= total_dots:
                     break
-
+                    
                 x = start_x + col * (dot_size + spacing)
                 y = start_y + row * (dot_size + spacing)
 
@@ -429,7 +429,7 @@ class LifeCalendarGenerator:
             fy = start_y + layout['grid_height'] + max(12, int(20 * min(self.width, self.height) / 1080))
             draw.text((fx + 1, fy + 1), footer_text, fill=(0, 0, 0, 80), font=self.footer_font)
             draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
-
+        
         return img
 
     # ---- Month-row year calendar ----
@@ -565,7 +565,7 @@ class LifeCalendarGenerator:
                 else:
                     dot_color = empty_colors[wg]
 
-                draw.ellipse(
+                    draw.ellipse(
                     [x, y_px, x + dot_size, y_px + dot_size],
                     fill=dot_color
                 )
@@ -580,9 +580,9 @@ class LifeCalendarGenerator:
             draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
 
         return img
-
+    
     # ---- High-level generators ----
-
+    
     def generate_life_calendar(self, birth_date, output_path, custom_title=None):
         (weeks_lived, total_weeks, weeks_remaining,
          days_lived, total_days, days_remaining) = self.calculate_life_weeks(birth_date)
@@ -590,7 +590,7 @@ class LifeCalendarGenerator:
         title = custom_title or "Life Calendar"
         pct = weeks_lived * 100 // total_weeks if total_weeks > 0 else 0
         footer = f"{weeks_remaining:,}w left · {pct}%"
-
+        
         img = self.draw_grid(
             filled_count=weeks_lived,
             total_count=total_weeks,
@@ -623,7 +623,7 @@ class LifeCalendarGenerator:
                              f"{end_date.strftime('%b %d, %Y')}")
         else:
             default_title = "Year Calendar"
-
+        
         title = custom_title or default_title
         pct = days_elapsed * 100 // total_days if total_days > 0 else 0
         footer = f"{days_remaining}d left · {pct}%"
@@ -650,9 +650,9 @@ def set_wallpaper_linux_mint(image_path):
     if not os.path.exists(abs_path):
         print(f"Error: Image not found: {abs_path}")
         return False
-
+    
     desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
-
+    
     try:
         if 'cinnamon' in desktop:
             subprocess.run([
@@ -679,7 +679,7 @@ def set_wallpaper_linux_mint(image_path):
                 'gsettings', 'set', 'org.gnome.desktop.background',
                 'picture-uri', f"file://{abs_path}"
             ], check=True)
-
+            
         print(f"Wallpaper set: {abs_path}")
         return True
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -708,9 +708,9 @@ def main():
     parser.add_argument('--year-end', type=str)
     parser.add_argument('--daily-seed', action='store_true',
                         help='Use date-based seed (same theme per day, for crontab)')
-
+    
     args = parser.parse_args()
-
+    
     # Validate birth date
     birth_date = None
     if args.type in ('life', 'both'):
@@ -722,7 +722,7 @@ def main():
         except ValueError:
             print("Error: Invalid birth date. Use YYYY-MM-DD")
             sys.exit(1)
-
+    
     # Validate year dates
     year_start = year_end = None
     if args.type in ('year', 'both'):
@@ -741,10 +741,10 @@ def main():
         if year_start and year_end and year_start >= year_end:
             print("Error: Start date must be before end date")
             sys.exit(1)
-
+    
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
+    
     seed = 'daily' if args.daily_seed else None
     generator = LifeCalendarGenerator(
         width=args.width, height=args.height, seed=seed
