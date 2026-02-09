@@ -8,24 +8,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
-        }
+        /* ======= RESET ======= */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         html, body {
             width: 100vw;
             height: 100vh;
             overflow: hidden;
-            margin: 0;
-            padding: 0;
             background: #0a0a0f;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
         }
 
         body {
@@ -35,23 +27,15 @@
             justify-content: center;
         }
 
-        /* Background layers */
+        /* ======= BACKGROUND LAYERS ======= */
         .bg-layer {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
+            inset: 0;
             z-index: 0;
         }
 
-        .bg-base {
-            background: var(--bg-gradient);
-        }
-
-        .bg-orbs {
-            background: var(--bg-orbs);
-        }
+        .bg-base { background: var(--bg-gradient); }
+        .bg-orbs { background: var(--bg-orbs); }
 
         .bg-noise {
             opacity: 0.03;
@@ -59,14 +43,14 @@
         }
 
         .bg-grid {
-            background-image: 
+            background-image:
                 linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
             background-size: 60px 60px;
             opacity: 0.5;
         }
 
-        /* Main container - glassmorphism card */
+        /* ======= GLASS CONTAINER ======= */
         .container {
             position: relative;
             z-index: 2;
@@ -80,9 +64,12 @@
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 24px;
-            box-shadow: 
+            box-shadow:
                 0 8px 32px rgba(0, 0, 0, 0.4),
                 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+            max-width: 98vw;
+            max-height: 96vh;
+            overflow: hidden;
         }
 
         .title {
@@ -99,22 +86,22 @@
         .calendar-grid {
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: var(--row-gap, 20px);
             width: 100%;
         }
 
         .month-row {
             display: flex;
             align-items: center;
-            gap: 28px;
+            gap: var(--label-gap, 28px);
             justify-content: flex-start;
             width: 100%;
         }
 
         .month-label {
-            width: 100px;
+            width: var(--label-width, 100px);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
+            font-size: var(--label-font, 11px);
             font-weight: 500;
             color: rgba(255, 255, 255, 0.35);
             text-align: right;
@@ -125,23 +112,24 @@
 
         .days-container {
             display: flex;
-            gap: 8px;
+            gap: var(--dot-gap, 8px);
             flex-wrap: nowrap;
             align-items: center;
         }
 
+        /* ======= DOT STYLES ======= */
         .dot {
-            width: 22px;
-            height: 22px;
-            border-radius: 6px;
+            width: var(--dot-size, 22px);
+            height: var(--dot-size, 22px);
+            border-radius: var(--dot-radius, 6px);
             position: relative;
             flex-shrink: 0;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
         }
 
         .dot.filled {
             background: var(--dot-color);
-            box-shadow: 
+            box-shadow:
                 0 2px 8px rgba(var(--dot-rgb), 0.3),
                 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
         }
@@ -153,12 +141,12 @@
 
         .dot.today {
             background: var(--today-color);
-            box-shadow: 
+            box-shadow:
                 0 0 20px rgba(var(--today-rgb), 0.5),
                 0 0 40px rgba(var(--today-rgb), 0.2),
                 0 2px 8px rgba(var(--today-rgb), 0.4);
             transform: scale(1.1);
-            border-radius: 8px;
+            border-radius: calc(var(--dot-radius, 6px) + 2px);
         }
 
         .dot.disabled {
@@ -167,6 +155,7 @@
             opacity: 0.4;
         }
 
+        /* ======= PROGRESS BAR ======= */
         .progress-wrapper {
             width: 100%;
             margin-top: 32px;
@@ -183,14 +172,12 @@
             background: rgba(255, 255, 255, 0.06);
             border-radius: 4px;
             overflow: hidden;
-            position: relative;
         }
 
         .progress-fill {
             height: 100%;
             background: var(--progress-gradient);
             border-radius: 4px;
-            transition: width 0.3s ease;
             box-shadow: var(--progress-glow);
         }
 
@@ -210,93 +197,52 @@
             font-weight: 500;
         }
 
-        /* Mobile Responsive Styles */
+        /* ======= RESPONSIVE: TABLET ======= */
         @media (max-width: 768px) {
             .container {
                 padding: 24px 20px;
                 border-radius: 16px;
-                max-width: 95vw;
             }
-
             .title {
                 font-size: 11px;
                 letter-spacing: 2px;
                 margin-bottom: 24px;
             }
-
-            .calendar-grid {
-                gap: 16px;
-            }
-
-            .month-row {
-                gap: 16px;
-                flex-wrap: wrap;
-            }
-
-            .month-label {
-                width: 70px;
-                font-size: 9px;
-                text-align: left;
-            }
-
-            .days-container {
-                gap: 6px;
-                flex-wrap: wrap;
-            }
-
-            .dot {
-                width: 16px;
-                height: 16px;
-                border-radius: 4px;
-            }
-
-            .dot.today {
-                transform: scale(1.05);
-            }
-
-            .progress-bar {
-                max-width: 100%;
-                height: 6px;
-            }
-
-            .footer {
-                font-size: 10px;
-                letter-spacing: 1px;
-            }
-
-            .bg-grid {
-                background-size: 40px 40px;
-            }
+            .progress-bar { height: 6px; }
+            .footer { font-size: 10px; letter-spacing: 1px; }
+            .bg-grid { background-size: 40px 40px; }
         }
 
+        /* ======= RESPONSIVE: MOBILE ======= */
         @media (max-width: 480px) {
             .container {
-                padding: 20px 16px;
+                padding: 16px 12px;
                 border-radius: 12px;
             }
-
             .title {
-                font-size: 10px;
-                margin-bottom: 20px;
+                font-size: 9px;
+                margin-bottom: 16px;
+                letter-spacing: 1.5px;
             }
+            .progress-wrapper { margin-top: 20px; gap: 8px; }
+            .footer { font-size: 8px; }
+        }
 
-            .month-label {
-                width: 60px;
+        /* ======= RESPONSIVE: SMALL PHONE ======= */
+        @media (max-width: 400px) {
+            .container {
+                padding: 12px 8px;
+                border-radius: 10px;
+            }
+            .title {
                 font-size: 8px;
+                margin-bottom: 12px;
             }
-
-            .dot {
-                width: 14px;
-                height: 14px;
-            }
-
-            .days-container {
-                gap: 5px;
-            }
+            .progress-bar { height: 4px; }
         }
     </style>
 </head>
-<body style="background: #0a0a0f !important; margin: 0 !important; padding: 0 !important;">
+<body style="background: #0a0a0f !important;">
     <!-- Layered background -->
     <div class="bg-layer bg-base"></div>
     <div class="bg-layer bg-orbs"></div>
@@ -315,166 +261,183 @@
     </div>
 
     <script>
-        // ========================================
-        // COLOR THEMES - Modern, curated palettes
-        // ========================================
-        const themes = [
-            {
-                name: 'Indigo Night',
-                bgGradient: 'linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0a0a14 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(244, 114, 182, 0.12) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 60% 80%, rgba(34, 211, 238, 0.08) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#6366f1', rgb: '99, 102, 241' },
-                    { hex: '#f472b6', rgb: '244, 114, 182' },
-                    { hex: '#34d399', rgb: '52, 211, 153' },
-                    { hex: '#fbbf24', rgb: '251, 191, 36' }
-                ],
-                today: { hex: '#818cf8', rgb: '129, 140, 248' },
-                accent: 'rgba(129, 140, 248, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #6366f1 0%, #818cf8 50%, #a5b4fc 100%)',
-                progressGlow: '0 0 12px rgba(99, 102, 241, 0.4)'
-            },
-            {
-                name: 'Ocean Depths',
-                bgGradient: 'linear-gradient(135deg, #0a1628 0%, #0f2847 50%, #071320 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 80% 50% at 25% 35%, rgba(14, 165, 233, 0.18) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 40% at 75% 25%, rgba(34, 211, 238, 0.14) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 50% 75%, rgba(56, 189, 248, 0.10) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#0ea5e9', rgb: '14, 165, 233' },
-                    { hex: '#22d3ee', rgb: '34, 211, 238' },
-                    { hex: '#2dd4bf', rgb: '45, 212, 191' },
-                    { hex: '#38bdf8', rgb: '56, 189, 248' }
-                ],
-                today: { hex: '#7dd3fc', rgb: '125, 211, 252' },
-                accent: 'rgba(125, 211, 252, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 50%, #7dd3fc 100%)',
-                progressGlow: '0 0 12px rgba(14, 165, 233, 0.4)'
-            },
-            {
-                name: 'Aurora Borealis',
-                bgGradient: 'linear-gradient(135deg, #0a1a1a 0%, #0f2a2a 50%, #051414 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 70% 50% at 30% 40%, rgba(16, 185, 129, 0.18) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 45% at 70% 30%, rgba(52, 211, 153, 0.14) 0%, transparent 50%),
-                    radial-gradient(ellipse 55% 50% at 45% 70%, rgba(6, 182, 212, 0.12) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#10b981', rgb: '16, 185, 129' },
-                    { hex: '#34d399', rgb: '52, 211, 153' },
-                    { hex: '#06b6d4', rgb: '6, 182, 212' },
-                    { hex: '#14b8a6', rgb: '20, 184, 166' }
-                ],
-                today: { hex: '#6ee7b7', rgb: '110, 231, 183' },
-                accent: 'rgba(110, 231, 183, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #10b981 0%, #34d399 50%, #6ee7b7 100%)',
-                progressGlow: '0 0 12px rgba(16, 185, 129, 0.4)'
-            },
-            {
-                name: 'Sunset Ember',
-                bgGradient: 'linear-gradient(135deg, #1a0f0a 0%, #2a1a14 50%, #140a05 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 75% 50% at 25% 45%, rgba(251, 146, 60, 0.16) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 40% at 75% 25%, rgba(239, 68, 68, 0.12) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 55% 75%, rgba(251, 191, 36, 0.10) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#fb923c', rgb: '251, 146, 60' },
-                    { hex: '#f87171', rgb: '248, 113, 113' },
-                    { hex: '#fbbf24', rgb: '251, 191, 36' },
-                    { hex: '#fb7185', rgb: '251, 113, 133' }
-                ],
-                today: { hex: '#fdba74', rgb: '253, 186, 116' },
-                accent: 'rgba(253, 186, 116, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #f97316 0%, #fb923c 50%, #fdba74 100%)',
-                progressGlow: '0 0 12px rgba(251, 146, 60, 0.4)'
-            },
-            {
-                name: 'Violet Dreams',
-                bgGradient: 'linear-gradient(135deg, #1a0a1f 0%, #2a1a34 50%, #140a18 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 75% 50% at 20% 40%, rgba(168, 85, 247, 0.18) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 45% at 80% 25%, rgba(192, 132, 252, 0.14) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 50% 80%, rgba(236, 72, 153, 0.10) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#a855f7', rgb: '168, 85, 247' },
-                    { hex: '#c084fc', rgb: '192, 132, 252' },
-                    { hex: '#e879f9', rgb: '232, 121, 249' },
-                    { hex: '#f472b6', rgb: '244, 114, 182' }
-                ],
-                today: { hex: '#d8b4fe', rgb: '216, 180, 254' },
-                accent: 'rgba(216, 180, 254, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #a855f7 0%, #c084fc 50%, #d8b4fe 100%)',
-                progressGlow: '0 0 12px rgba(168, 85, 247, 0.4)'
-            },
-            {
-                name: 'Rose Gold',
-                bgGradient: 'linear-gradient(135deg, #1a0f14 0%, #2a1a24 50%, #140a0f 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 75% 50% at 25% 35%, rgba(244, 114, 182, 0.16) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 45% at 75% 30%, rgba(251, 113, 133, 0.14) 0%, transparent 50%),
-                    radial-gradient(ellipse 55% 50% at 45% 75%, rgba(253, 164, 175, 0.10) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#f472b6', rgb: '244, 114, 182' },
-                    { hex: '#fb7185', rgb: '251, 113, 133' },
-                    { hex: '#fda4af', rgb: '253, 164, 175' },
-                    { hex: '#f9a8d4', rgb: '249, 168, 212' }
-                ],
-                today: { hex: '#fbcfe8', rgb: '251, 207, 232' },
-                accent: 'rgba(251, 207, 232, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #ec4899 0%, #f472b6 50%, #fbcfe8 100%)',
-                progressGlow: '0 0 12px rgba(236, 72, 153, 0.4)'
-            },
-            {
-                name: 'Midnight Forest',
-                bgGradient: 'linear-gradient(135deg, #0a140f 0%, #142a1f 50%, #050f0a 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 70% 50% at 30% 35%, rgba(34, 197, 94, 0.16) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 45% at 70% 25%, rgba(74, 222, 128, 0.12) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 50% 75%, rgba(132, 204, 22, 0.08) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#22c55e', rgb: '34, 197, 94' },
-                    { hex: '#4ade80', rgb: '74, 222, 128' },
-                    { hex: '#84cc16', rgb: '132, 204, 22' },
-                    { hex: '#a3e635', rgb: '163, 230, 53' }
-                ],
-                today: { hex: '#86efac', rgb: '134, 239, 172' },
-                accent: 'rgba(134, 239, 172, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #22c55e 0%, #4ade80 50%, #86efac 100%)',
-                progressGlow: '0 0 12px rgba(34, 197, 94, 0.4)'
-            },
-            {
-                name: 'Arctic Frost',
-                bgGradient: 'linear-gradient(135deg, #0f1419 0%, #1a2633 50%, #0a0f14 100%)',
-                bgOrbs: `
-                    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(148, 163, 184, 0.12) 0%, transparent 50%),
-                    radial-gradient(ellipse 60% 40% at 80% 25%, rgba(203, 213, 225, 0.10) 0%, transparent 50%),
-                    radial-gradient(ellipse 50% 50% at 50% 75%, rgba(226, 232, 240, 0.08) 0%, transparent 50%)
-                `,
-                filled: [
-                    { hex: '#94a3b8', rgb: '148, 163, 184' },
-                    { hex: '#cbd5e1', rgb: '203, 213, 225' },
-                    { hex: '#64748b', rgb: '100, 116, 139' },
-                    { hex: '#e2e8f0', rgb: '226, 232, 240' }
-                ],
-                today: { hex: '#f1f5f9', rgb: '241, 245, 249' },
-                accent: 'rgba(241, 245, 249, 0.9)',
-                progressGradient: 'linear-gradient(90deg, #64748b 0%, #94a3b8 50%, #e2e8f0 100%)',
-                progressGlow: '0 0 12px rgba(148, 163, 184, 0.4)'
-            }
-        ];
+        // =========================================================
+        // DYNAMIC THEME GENERATOR
+        // Uses HSL color theory — unique colors every day.
+        // Same algorithm as the Python DailyTheme class.
+        // =========================================================
 
-        // Select random theme
-        const theme = themes[Math.floor(Math.random() * themes.length)];
+        function generateDailyTheme() {
+            // Date-based seed for reproducible daily themes
+            const today = new Date();
+            const dateStr = today.toISOString().split('T')[0]; // "YYYY-MM-DD"
+
+            // Simple string hash → seed integer
+            let seed = 0;
+            for (let i = 0; i < dateStr.length; i++) {
+                seed = ((seed << 5) - seed + dateStr.charCodeAt(i)) | 0;
+            }
+            seed = Math.abs(seed);
+
+            // Seeded pseudo-random number generator (Park-Miller LCG)
+            function rand() {
+                seed = (seed * 16807 + 12345) % 2147483647;
+                return (seed & 0x7fffffff) / 2147483647;
+            }
+
+            // HSL → RGB (h: 0-360, s: 0-1, l: 0-1) → [r, g, b] (0-255)
+            function hslToRgb(h, s, l) {
+                h = ((h % 360) + 360) % 360;
+                s = Math.max(0, Math.min(1, s));
+                l = Math.max(0, Math.min(1, l));
+                const c = (1 - Math.abs(2 * l - 1)) * s;
+                const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                const m = l - c / 2;
+                let r, g, b;
+                if (h < 60)       { r = c; g = x; b = 0; }
+                else if (h < 120) { r = x; g = c; b = 0; }
+                else if (h < 180) { r = 0; g = c; b = x; }
+                else if (h < 240) { r = 0; g = x; b = c; }
+                else if (h < 300) { r = x; g = 0; b = c; }
+                else              { r = c; g = 0; b = x; }
+                return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+            }
+
+            function rgbHex(r, g, b) {
+                return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+            }
+
+            // ---- Base hue: the "mood" of the day ----
+            const baseHue = rand() * 360;
+
+            // ---- Color harmony strategy ----
+            const strategies = ['complementary', 'analogous', 'triadic', 'split', 'tetradic'];
+            const strategy = strategies[Math.floor(rand() * strategies.length)];
+
+            let accentHues;
+            if (strategy === 'complementary') {
+                accentHues = [baseHue, (baseHue + 180) % 360];
+            } else if (strategy === 'analogous') {
+                const off = 25 + rand() * 15;
+                accentHues = [baseHue, (baseHue + off) % 360, (baseHue - off + 360) % 360];
+            } else if (strategy === 'triadic') {
+                accentHues = [baseHue, (baseHue + 120) % 360, (baseHue + 240) % 360];
+            } else if (strategy === 'split') {
+                accentHues = [baseHue, (baseHue + 150) % 360, (baseHue + 210) % 360];
+            } else {
+                accentHues = [baseHue, (baseHue + 90) % 360, (baseHue + 180) % 360, (baseHue + 270) % 360];
+            }
+
+            // ---- Filled dot colors (bright, saturated) ----
+            const filled = [];
+            for (let i = 0; i < 4; i++) {
+                const hue = accentHues[i % accentHues.length];
+                const sat = 0.50 + rand() * 0.30;
+                const lit = 0.55 + rand() * 0.20;
+                const rgb = hslToRgb(hue, sat, lit);
+                filled.push({ hex: rgbHex(...rgb), rgb: rgb.join(', ') });
+            }
+
+            // ---- Today color (vibrant accent) ----
+            const todayHue = (baseHue + 40 + rand() * 40) % 360;
+            const todayRgb = hslToRgb(todayHue, 0.85, 0.70);
+
+            // ---- Background gradient (very dark with subtle color tint) ----
+            const bg1 = hslToRgb(baseHue, 0.40, 0.06);
+            const bg2 = hslToRgb((baseHue + 15) % 360, 0.35, 0.08);
+            const bg3 = hslToRgb((baseHue - 10 + 360) % 360, 0.30, 0.04);
+
+            // ---- Orb colors (soft, atmospheric glow) ----
+            const orb1 = hslToRgb(accentHues[0], 0.70, 0.50);
+            const orb2 = hslToRgb(accentHues[1 % accentHues.length], 0.60, 0.45);
+            const orb3 = hslToRgb(accentHues[Math.min(2, accentHues.length - 1)], 0.55, 0.50);
+
+            return {
+                bgGradient: `linear-gradient(135deg, rgb(${bg1}) 0%, rgb(${bg2}) 50%, rgb(${bg3}) 100%)`,
+                bgOrbs: `
+                    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(${orb1}, 0.15) 0%, transparent 50%),
+                    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(${orb2}, 0.12) 0%, transparent 50%),
+                    radial-gradient(ellipse 50% 50% at 60% 80%, rgba(${orb3}, 0.08) 0%, transparent 50%)
+                `,
+                filled: filled,
+                today: { hex: rgbHex(...todayRgb), rgb: todayRgb.join(', ') },
+                accent: `rgba(${todayRgb.join(',')}, 0.9)`,
+                progressGradient: `linear-gradient(90deg, ${filled[0].hex} 0%, ${filled[1].hex} 50%, ${filled[2 % filled.length].hex} 100%)`,
+                progressGlow: `0 0 12px rgba(${filled[0].rgb}, 0.4)`
+            };
+        }
+
+        // =========================================================
+        // RESPONSIVE DOT SIZING
+        // Adapts to viewport so dots never overflow on mobile.
+        // =========================================================
+
+        function computeDotSizing() {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+
+            // Available width inside container (accounting for padding + labels)
+            let containerPad, labelWidth, labelGap, dotGap, rowGap;
+
+            if (vw <= 400) {
+                // Small phone
+                containerPad = 8 * 2;
+                labelWidth = 38;
+                labelGap = 6;
+                dotGap = 1;
+                rowGap = 8;
+            } else if (vw <= 480) {
+                // Regular phone
+                containerPad = 12 * 2;
+                labelWidth = 50;
+                labelGap = 8;
+                dotGap = 2;
+                rowGap = 10;
+            } else if (vw <= 768) {
+                // Tablet
+                containerPad = 20 * 2;
+                labelWidth = 70;
+                labelGap = 16;
+                dotGap = 5;
+                rowGap = 16;
+            } else {
+                // Desktop
+                containerPad = 64 * 2;
+                labelWidth = 100;
+                labelGap = 28;
+                dotGap = 8;
+                rowGap = 20;
+            }
+
+            // Width available for 31 dot cells (dot + gap)
+            const availableForDots = vw - containerPad - labelWidth - labelGap - 20; // 20px safety
+            const cellWidth = availableForDots / 31;
+            // Dot size is the cell minus the gap, but ensure minimum
+            let dotSize = Math.max(4, Math.floor(cellWidth - dotGap));
+            // Cap dot size so desktop doesn't produce huge dots
+            dotSize = Math.min(dotSize, 22);
+            const dotRadius = Math.max(2, Math.round(dotSize * 0.27));
+            const labelFont = Math.max(7, Math.min(11, Math.round(dotSize * 0.55)));
+
+            // Set CSS custom properties
+            const root = document.documentElement;
+            root.style.setProperty('--dot-size', dotSize + 'px');
+            root.style.setProperty('--dot-gap', dotGap + 'px');
+            root.style.setProperty('--dot-radius', dotRadius + 'px');
+            root.style.setProperty('--label-width', labelWidth + 'px');
+            root.style.setProperty('--label-gap', labelGap + 'px');
+            root.style.setProperty('--label-font', labelFont + 'px');
+            root.style.setProperty('--row-gap', rowGap + 'px');
+
+            return { dotSize, dotGap, labelWidth };
+        }
+
+        // =========================================================
+        // APPLY THEME + RENDER CALENDAR
+        // =========================================================
+
+        // Generate the daily theme
+        const theme = generateDailyTheme();
 
         // Apply theme CSS variables
         document.documentElement.style.setProperty('--bg-gradient', theme.bgGradient);
@@ -487,6 +450,10 @@
         document.documentElement.style.background = '#0a0a0f';
         document.body.style.background = '#0a0a0f';
 
+        // Compute responsive dot sizes
+        computeDotSizing();
+
+        // ---- Calendar config (replaced by API server for custom dates) ----
         const config = {
             yearStart: '2025-12-01',
             yearEnd: '2026-05-31',
@@ -500,89 +467,93 @@
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        // Build month data
         const months = [];
-        let date = new Date(start);
-        while (date <= end) {
-            const y = date.getFullYear();
-            const m = date.getMonth();
+        let dateIter = new Date(start);
+        while (dateIter <= end) {
+            const y = dateIter.getFullYear();
+            const m = dateIter.getMonth();
             const monthStart = new Date(y, m, 1);
             const monthEnd = new Date(y, m + 1, 0);
-            const monthStartDate = new Date(Math.max(monthStart, start));
-            monthStartDate.setHours(0, 0, 0, 0);
-            const monthEndDate = new Date(Math.min(monthEnd, end));
-            monthEndDate.setHours(23, 59, 59, 999);
-            
+            const clampedStart = new Date(Math.max(monthStart, start));
+            clampedStart.setHours(0, 0, 0, 0);
+            const clampedEnd = new Date(Math.min(monthEnd, end));
+            clampedEnd.setHours(23, 59, 59, 999);
+
             months.push({
                 year: y,
                 month: m,
                 name: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase(),
                 days: monthEnd.getDate(),
-                start: monthStartDate,
-                end: monthEndDate
+                start: clampedStart,
+                end: clampedEnd
             });
-            date = new Date(y, m + 1, 1);
+            dateIter = new Date(y, m + 1, 1);
         }
 
+        // Calculate progress
         const totalDays = Math.floor((end - start) / 86400000) + 1;
         const daysElapsed = Math.max(0, Math.min(totalDays, Math.floor((today - start) / 86400000) + 1));
         const daysLeft = totalDays - daysElapsed;
         const percent = Math.round((daysElapsed / totalDays) * 100);
 
-        document.getElementById('footer').innerHTML = `<span>${daysLeft}</span> days left · <span>${percent}%</span> complete`;
+        // Update UI
+        document.getElementById('footer').innerHTML =
+            `<span>${daysLeft}</span> days left · <span>${percent}%</span> complete`;
         document.getElementById('title').textContent = config.title;
         document.getElementById('progressFill').style.width = `${percent}%`;
 
+        // ---- Render calendar grid ----
         const grid = document.getElementById('calendarGrid');
         months.forEach(month => {
             const row = document.createElement('div');
             row.className = 'month-row';
-            
+
             const label = document.createElement('div');
             label.className = 'month-label';
             label.textContent = month.name;
             row.appendChild(label);
-            
+
             const days = document.createElement('div');
             days.className = 'days-container';
-            
+
             for (let day = 1; day <= 31; day++) {
                 const dayDate = new Date(month.year, month.month, day);
                 dayDate.setHours(0, 0, 0, 0);
-                
-                // Check if day is within the valid range for this month
-                // Include day if: it's a valid day of month AND within the date range
+
                 const dayTime = dayDate.getTime();
                 const startTime = month.start.getTime();
                 const endTime = month.end.getTime();
-                
+
+                // Disabled: non-existent day or outside range
                 if (day > month.days || dayTime < startTime || dayTime > endTime) {
                     const dot = document.createElement('div');
                     dot.className = 'dot disabled';
                     days.appendChild(dot);
                     continue;
                 }
-                
+
                 const isFilled = dayDate <= today;
                 const isToday = dayDate.getTime() === today.getTime();
                 const weekGroup = Math.floor((day - 1) / 7) % 4;
-                
+
                 const dot = document.createElement('div');
                 dot.className = `dot ${isFilled ? 'filled' : 'empty'} ${isToday ? 'today' : ''}`;
-                
+
                 if (isFilled && !isToday) {
                     const colorData = theme.filled[weekGroup];
                     dot.style.setProperty('--dot-color', colorData.hex);
                     dot.style.setProperty('--dot-rgb', colorData.rgb);
                 }
-                
+
                 if (isToday) {
                     dot.style.setProperty('--today-color', theme.today.hex);
                     dot.style.setProperty('--today-rgb', theme.today.rgb);
                 }
-                
+
                 days.appendChild(dot);
             }
-            
+
             row.appendChild(days);
             grid.appendChild(row);
         });

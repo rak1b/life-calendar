@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
 """
-Life Calendar Wallpaper Generator for Linux Mint
-Generates minimalist wallpapers showing life progress in weeks or year progress.
+Life Calendar Wallpaper Generator
+Generates beautiful, dynamic wallpapers showing life progress in weeks or year progress.
+
+Key features:
+- DYNAMIC COLOR THEMES: Each day produces a unique color scheme using HSL color theory
+  (complementary, triadic, analogous, split-complementary, tetradic harmonies).
+- AUTO-SCALING: Dot size, spacing, and fonts adapt to any resolution (mobile → 4K).
+- MONTH-ROW LAYOUT: Year calendar uses one row per month for easy tracking.
+- LIFE CALENDAR: Classic 52×90 week grid for lifetime visualization.
+
+Usage (crontab):
+    python3 lifecalender.py --type year --year-start 2025-12-01 --year-end 2026-05-31 \\
+                            --title "180 DAYS" --set-wallpaper
+
+    python3 lifecalender.py --type life --birth-date 1995-06-15 --set-wallpaper
 """
 
 import os
 import sys
-import calendar
-import random
 import math
-from datetime import datetime, date, timedelta
-from PIL import Image, ImageDraw, ImageFont
-import subprocess
+import random
+import hashlib
+import calendar
+import colorsys
 import argparse
+import subprocess
+from datetime import datetime, date, timedelta
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 try:
     import numpy as np
@@ -22,1255 +38,920 @@ except ImportError:
     HAS_NUMPY = False
 
 
-class LifeCalendarGenerator:
-    """Generate Life Calendar and Year Calendar wallpapers."""
-    
-    def __init__(self, width=1920, height=1080, dot_size=14, spacing=24, 
-                 bg_color=(10, 10, 15), dot_color=(255, 255, 255),
-                 filled_color=(255, 255, 255), empty_color=(40, 40, 40)):
+# =============================================================================
+# DYNAMIC THEME GENERATOR
+# =============================================================================
+
+class DailyTheme:
+    """
+    Generates a unique, harmonious color theme for each day using HSL color theory.
+
+    The current date is used as a seed, so:
+    - Same day always produces the same theme (safe for multiple crontab runs)
+    - Each new day is a completely different look (365+ unique themes per year)
+    - Colors are always harmonious thanks to color theory strategies
+    """
+
+    # Color harmony strategies for generating related hues
+    STRATEGIES = [
+        'complementary',       # 2 hues, 180° apart — bold contrast
+        'analogous',           # 3 hues, ±30° apart — smooth, calming
+        'triadic',             # 3 hues, 120° apart — vibrant, balanced
+        'split_complementary', # 3 hues: base + 150° + 210° — nuanced contrast
+        'tetradic',            # 4 hues, 90° apart — rich and complex
+    ]
+
+    def __init__(self, seed_date=None):
         """
-        Initialize the generator with customizable parameters.
-        
         Args:
-            width: Wallpaper width in pixels
-            height: Wallpaper height in pixels
-            dot_size: Size of each dot in pixels
-            spacing: Space between dots in pixels
-            bg_color: Background color (RGB tuple)
-            dot_color: Color for filled dots (RGB tuple)
-            filled_color: Color for completed weeks (RGB tuple)
-            empty_color: Color for remaining weeks (RGB tuple)
+            seed_date: The date to seed the theme from. Defaults to today.
+        """
+        self.seed_date = seed_date or date.today()
+        # SHA-256 hash of the date string → deterministic seed
+        seed_int = int(hashlib.sha256(
+            self.seed_date.isoformat().encode()
+        ).hexdigest(), 16)
+        self.rng = random.Random(seed_int)
+        self._generate()
+
+    # ---- internal helpers ----
+
+    def _hsl_to_rgb(self, h, s, l):
+        """Convert HSL (hue 0-360, saturation 0-1, lightness 0-1) → RGB (0-255)."""
+        h_norm = (h % 360) / 360.0
+        r, g, b = colorsys.hls_to_rgb(h_norm, l, s)  # note: Python uses HLS order
+        return (int(r * 255), int(g * 255), int(b * 255))
+
+    def _generate(self):
+        """Build the complete daily theme: background, dots, today highlight, text."""
+        rng = self.rng
+
+        # ---- 1. Base hue: the "mood" of the day (0–360°) ----
+        self.base_hue = rng.uniform(0, 360)
+        h = self.base_hue
+
+        # ---- 2. Choose a color harmony strategy ----
+        self.strategy = rng.choice(self.STRATEGIES)
+
+        # ---- 3. Derive accent hues from the strategy ----
+        if self.strategy == 'complementary':
+            accent_hues = [h, (h + 180) % 360]
+        elif self.strategy == 'analogous':
+            offset = rng.uniform(25, 40)
+            accent_hues = [h, (h + offset) % 360, (h - offset) % 360]
+        elif self.strategy == 'triadic':
+            accent_hues = [h, (h + 120) % 360, (h + 240) % 360]
+        elif self.strategy == 'split_complementary':
+            accent_hues = [h, (h + 150) % 360, (h + 210) % 360]
+        else:  # tetradic
+            accent_hues = [h, (h + 90) % 360, (h + 180) % 360, (h + 270) % 360]
+
+        # ---- 4. Background gradient corners (very dark, subtle tint) ----
+        self.bg_corners = {}
+        corner_specs = {
+            'top_left':     (rng.uniform(-5, 5),    rng.uniform(0.30, 0.65), rng.uniform(0.07, 0.14)),
+            'top_right':    (rng.uniform(10, 25),   rng.uniform(0.30, 0.65), rng.uniform(0.07, 0.14)),
+            'bottom_left':  (rng.uniform(-15, -5),  rng.uniform(0.25, 0.55), rng.uniform(0.03, 0.09)),
+            'bottom_right': (rng.uniform(5, 15),    rng.uniform(0.25, 0.55), rng.uniform(0.03, 0.09)),
+        }
+        for name, (hue_offset, sat, light) in corner_specs.items():
+            self.bg_corners[name] = self._hsl_to_rgb(h + hue_offset, sat, light)
+
+        # ---- 5. Filled dot colors (bright, high-saturation, different hues) ----
+        self.filled_colors = []
+        for accent_h in accent_hues[:4]:
+            sat = rng.uniform(0.45, 0.75)
+            light = rng.uniform(0.72, 0.88)
+            self.filled_colors.append(self._hsl_to_rgb(accent_h, sat, light))
+        # Pad to 4 colors if fewer than 4 accent hues
+        while len(self.filled_colors) < 4:
+            extra_hue = (accent_hues[0] + rng.uniform(50, 80)) % 360
+            self.filled_colors.append(self._hsl_to_rgb(extra_hue, 0.55, 0.80))
+
+        # ---- 6. Empty dot colors (same hues but very dark/muted) ----
+        self.empty_colors = []
+        for accent_h in accent_hues[:4]:
+            sat = rng.uniform(0.15, 0.35)
+            light = rng.uniform(0.10, 0.17)
+            self.empty_colors.append(self._hsl_to_rgb(accent_h, sat, light))
+        while len(self.empty_colors) < 4:
+            extra_hue = (accent_hues[0] + rng.uniform(50, 80)) % 360
+            self.empty_colors.append(self._hsl_to_rgb(extra_hue, 0.20, 0.14))
+
+        # ---- 7. Today's dot: vibrant accent with glow layers ----
+        today_hue = (h + rng.uniform(40, 80)) % 360
+        self.today_dot  = self._hsl_to_rgb(today_hue, 0.85, 0.68)
+        self.today_ring = self._hsl_to_rgb(today_hue, 0.75, 0.48)
+        self.today_glow = self._hsl_to_rgb(today_hue, 0.65, 0.30)
+
+        # ---- 8. Disabled dot (nearly invisible placeholder) ----
+        self.disabled_dot = self._hsl_to_rgb(h, 0.08, 0.09)
+
+        # ---- 9. UI text colors (white-ish with subtle hue tint) ----
+        self.title_color     = (255, 255, 255)
+        self.footer_color    = (220, 220, 225)
+        self.label_color     = self._hsl_to_rgb(h, 0.15, 0.72)
+        self.separator_color = self._hsl_to_rgb(h, 0.10, 0.28)
+
+    def __repr__(self):
+        return (f"DailyTheme(date={self.seed_date}, hue={self.base_hue:.0f}°, "
+                f"strategy={self.strategy})")
+
+
+# =============================================================================
+# LIFE CALENDAR GENERATOR
+# =============================================================================
+
+class LifeCalendarGenerator:
+    """
+    Generates Life Calendar and Year Calendar wallpapers.
+
+    Adapts dot size, spacing, and fonts automatically based on output dimensions
+    so it works on any screen: mobile (390×844), desktop (1920×1080), 4K, etc.
+    """
+
+    def __init__(self, width=1920, height=1080):
+        """
+        Args:
+            width:  Output image width in pixels.
+            height: Output image height in pixels.
         """
         self.width = width
         self.height = height
-        self.dot_size = dot_size
-        self.spacing = spacing
-        self.bg_color = bg_color
-        self.dot_color = dot_color
-        self.filled_color = filled_color
-        self.empty_color = empty_color
-        
-        # Base grid dimensions (max possible given the screen).
-        # Specific calendar types can request their own grid (e.g. 52x90).
-        self.cols = (width - 2 * spacing) // (dot_size + spacing)
-        self.rows = (height - 2 * spacing) // (dot_size + spacing)
-    
-    def get_color_palettes(self):
-        """
-        Get 100 professionally researched color palettes for dark/black backgrounds.
-        Based on web research and proven design systems:
-        - Algorithmic gradient generation (twallpaper, wallendar projects)
-        - Complementary color theory for dark UIs
-        - Material Design and modern UI frameworks
-        - High contrast ratios for readability
-        - Smooth multi-color gradient transitions
-        
-        Returns:
-            List of color palette dictionaries with 4 corner colors for bilinear gradients
-        """
-        return [
-            # Deep Blue + Cyan (1-10) - High contrast, modern tech aesthetic
-            {'top_left': (15, 25, 42), 'top_right': (12, 32, 48), 'bottom_left': (8, 14, 24), 'bottom_right': (6, 20, 30)},
-            {'top_left': (18, 28, 45), 'top_right': (15, 35, 50), 'bottom_left': (10, 16, 26), 'bottom_right': (8, 22, 32)},
-            {'top_left': (12, 22, 38), 'top_right': (10, 30, 45), 'bottom_left': (7, 12, 22), 'bottom_right': (5, 18, 28)},
-            {'top_left': (20, 30, 48), 'top_right': (18, 38, 52), 'bottom_left': (11, 18, 28), 'bottom_right': (9, 24, 34)},
-            {'top_left': (14, 24, 40), 'top_right': (11, 28, 46), 'bottom_left': (8, 13, 23), 'bottom_right': (6, 19, 29)},
-            {'top_left': (22, 32, 50), 'top_right': (20, 40, 54), 'bottom_left': (12, 20, 30), 'bottom_right': (10, 26, 36)},
-            {'top_left': (16, 26, 43), 'top_right': (13, 33, 49), 'bottom_left': (9, 15, 25), 'bottom_right': (7, 21, 31)},
-            {'top_left': (13, 23, 39), 'top_right': (11, 31, 47), 'bottom_left': (7, 12, 22), 'bottom_right': (5, 18, 28)},
-            {'top_left': (19, 29, 46), 'top_right': (17, 37, 51), 'bottom_left': (10, 17, 27), 'bottom_right': (8, 23, 33)},
-            {'top_left': (11, 21, 37), 'top_right': (9, 29, 44), 'bottom_left': (6, 11, 21), 'bottom_right': (4, 17, 27)},
-            
-            # Purple + Magenta (11-20) - Vibrant yet sophisticated
-            {'top_left': (32, 18, 42), 'top_right': (38, 22, 48), 'bottom_left': (18, 10, 24), 'bottom_right': (22, 14, 30)},
-            {'top_left': (35, 20, 45), 'top_right': (41, 24, 50), 'bottom_left': (20, 11, 26), 'bottom_right': (24, 15, 32)},
-            {'top_left': (29, 16, 39), 'top_right': (35, 20, 45), 'bottom_left': (16, 9, 22), 'bottom_right': (20, 13, 28)},
-            {'top_left': (38, 22, 48), 'top_right': (44, 26, 52), 'bottom_left': (22, 12, 28), 'bottom_right': (26, 16, 34)},
-            {'top_left': (26, 14, 36), 'top_right': (32, 18, 42), 'bottom_left': (14, 8, 20), 'bottom_right': (18, 12, 26)},
-            {'top_left': (41, 24, 50), 'top_right': (47, 28, 54), 'bottom_left': (24, 13, 30), 'bottom_right': (28, 17, 36)},
-            {'top_left': (33, 19, 43), 'top_right': (39, 23, 49), 'bottom_left': (19, 10, 25), 'bottom_right': (23, 14, 31)},
-            {'top_left': (30, 17, 40), 'top_right': (36, 21, 46), 'bottom_left': (17, 9, 23), 'bottom_right': (21, 13, 29)},
-            {'top_left': (36, 21, 46), 'top_right': (42, 25, 51), 'bottom_left': (21, 11, 27), 'bottom_right': (25, 15, 33)},
-            {'top_left': (27, 15, 37), 'top_right': (33, 19, 43), 'bottom_left': (15, 8, 21), 'bottom_right': (19, 12, 27)},
-            
-            # Teal + Orange (21-30) - Complementary colors with strong visual appeal
-            {'top_left': (14, 38, 42), 'top_right': (42, 28, 18), 'bottom_left': (8, 20, 24), 'bottom_right': (24, 16, 10)},
-            {'top_left': (16, 40, 44), 'top_right': (45, 30, 20), 'bottom_left': (9, 21, 25), 'bottom_right': (26, 17, 11)},
-            {'top_left': (12, 36, 40), 'top_right': (39, 26, 16), 'bottom_left': (7, 19, 23), 'bottom_right': (22, 15, 9)},
-            {'top_left': (18, 42, 46), 'top_right': (48, 32, 22), 'bottom_left': (10, 22, 26), 'bottom_right': (28, 18, 12)},
-            {'top_left': (10, 34, 38), 'top_right': (36, 24, 14), 'bottom_left': (6, 18, 22), 'bottom_right': (20, 14, 8)},
-            {'top_left': (20, 44, 48), 'top_right': (50, 34, 24), 'bottom_left': (11, 23, 27), 'bottom_right': (30, 19, 13)},
-            {'top_left': (15, 39, 43), 'top_right': (43, 29, 19), 'bottom_left': (8, 20, 24), 'bottom_right': (25, 16, 10)},
-            {'top_left': (13, 37, 41), 'top_right': (41, 27, 17), 'bottom_left': (7, 19, 23), 'bottom_right': (23, 15, 9)},
-            {'top_left': (17, 41, 45), 'top_right': (46, 31, 21), 'bottom_left': (9, 21, 25), 'bottom_right': (27, 17, 11)},
-            {'top_left': (11, 35, 39), 'top_right': (38, 25, 15), 'bottom_left': (6, 18, 22), 'bottom_right': (21, 14, 8)},
-            
-            # Navy + Gold (31-40) - Elegant and premium feel
-            {'top_left': (12, 18, 35), 'top_right': (42, 35, 18), 'bottom_left': (7, 10, 20), 'bottom_right': (24, 20, 10)},
-            {'top_left': (14, 20, 38), 'top_right': (45, 38, 20), 'bottom_left': (8, 11, 22), 'bottom_right': (26, 21, 11)},
-            {'top_left': (10, 16, 32), 'top_right': (39, 32, 16), 'bottom_left': (6, 9, 18), 'bottom_right': (22, 18, 9)},
-            {'top_left': (16, 22, 40), 'top_right': (48, 40, 22), 'bottom_left': (9, 12, 24), 'bottom_right': (28, 22, 12)},
-            {'top_left': (8, 14, 30), 'top_right': (36, 30, 14), 'bottom_left': (5, 8, 17), 'bottom_right': (20, 17, 8)},
-            {'top_left': (18, 24, 42), 'top_right': (50, 42, 24), 'bottom_left': (10, 13, 25), 'bottom_right': (30, 23, 13)},
-            {'top_left': (13, 19, 36), 'top_right': (43, 36, 19), 'bottom_left': (7, 10, 20), 'bottom_right': (25, 20, 10)},
-            {'top_left': (11, 17, 33), 'top_right': (41, 34, 17), 'bottom_left': (6, 9, 18), 'bottom_right': (23, 19, 9)},
-            {'top_left': (15, 21, 39), 'top_right': (46, 39, 21), 'bottom_left': (8, 11, 22), 'bottom_right': (27, 21, 11)},
-            {'top_left': (9, 15, 31), 'top_right': (37, 31, 15), 'bottom_left': (5, 8, 17), 'bottom_right': (21, 18, 8)},
-            
-            # Deep Green + Lime (41-50) - Natural yet energetic
-            {'top_left': (10, 32, 20), 'top_right': (28, 42, 18), 'bottom_left': (6, 18, 11), 'bottom_right': (16, 24, 10)},
-            {'top_left': (12, 34, 22), 'top_right': (30, 44, 20), 'bottom_left': (7, 19, 12), 'bottom_right': (17, 25, 11)},
-            {'top_left': (8, 30, 18), 'top_right': (26, 40, 16), 'bottom_left': (5, 17, 10), 'bottom_right': (15, 23, 9)},
-            {'top_left': (14, 36, 24), 'top_right': (32, 46, 22), 'bottom_left': (8, 20, 13), 'bottom_right': (18, 26, 12)},
-            {'top_left': (6, 28, 16), 'top_right': (24, 38, 14), 'bottom_left': (4, 16, 9), 'bottom_right': (14, 22, 8)},
-            {'top_left': (16, 38, 26), 'top_right': (34, 48, 24), 'bottom_left': (9, 21, 14), 'bottom_right': (19, 27, 13)},
-            {'top_left': (11, 33, 21), 'top_right': (29, 43, 19), 'bottom_left': (6, 18, 11), 'bottom_right': (16, 24, 10)},
-            {'top_left': (9, 31, 19), 'top_right': (27, 41, 17), 'bottom_left': (5, 17, 10), 'bottom_right': (15, 23, 9)},
-            {'top_left': (13, 35, 23), 'top_right': (31, 45, 21), 'bottom_left': (7, 19, 12), 'bottom_right': (17, 25, 11)},
-            {'top_left': (7, 29, 17), 'top_right': (25, 39, 15), 'bottom_left': (4, 16, 9), 'bottom_right': (14, 22, 8)},
-            
-            # Indigo + Electric Blue (51-60) - Modern and sleek
-            {'top_left': (22, 18, 38), 'top_right': (15, 28, 48), 'bottom_left': (12, 10, 22), 'bottom_right': (8, 16, 30)},
-            {'top_left': (24, 20, 40), 'top_right': (17, 30, 50), 'bottom_left': (13, 11, 23), 'bottom_right': (9, 17, 32)},
-            {'top_left': (20, 16, 36), 'top_right': (13, 26, 46), 'bottom_left': (11, 9, 21), 'bottom_right': (7, 15, 29)},
-            {'top_left': (26, 22, 42), 'top_right': (19, 32, 52), 'bottom_left': (14, 12, 24), 'bottom_right': (10, 18, 33)},
-            {'top_left': (18, 14, 34), 'top_right': (11, 24, 44), 'bottom_left': (10, 8, 20), 'bottom_right': (6, 14, 28)},
-            {'top_left': (28, 24, 44), 'top_right': (21, 34, 54), 'bottom_left': (15, 13, 25), 'bottom_right': (11, 19, 34)},
-            {'top_left': (23, 19, 39), 'top_right': (16, 29, 49), 'bottom_left': (12, 10, 22), 'bottom_right': (8, 16, 30)},
-            {'top_left': (21, 17, 37), 'top_right': (14, 27, 47), 'bottom_left': (11, 9, 21), 'bottom_right': (7, 15, 29)},
-            {'top_left': (25, 21, 41), 'top_right': (18, 31, 51), 'bottom_left': (13, 11, 23), 'bottom_right': (9, 17, 32)},
-            {'top_left': (19, 15, 35), 'top_right': (12, 25, 45), 'bottom_left': (10, 8, 20), 'bottom_right': (6, 14, 28)},
-            
-            # Charcoal + Neon Pink (61-70) - High contrast, contemporary
-            {'top_left': (24, 24, 28), 'top_right': (48, 20, 38), 'bottom_left': (13, 13, 16), 'bottom_right': (28, 11, 22)},
-            {'top_left': (26, 26, 30), 'top_right': (50, 22, 40), 'bottom_left': (14, 14, 17), 'bottom_right': (30, 12, 23)},
-            {'top_left': (22, 22, 26), 'top_right': (46, 18, 36), 'bottom_left': (12, 12, 15), 'bottom_right': (26, 10, 21)},
-            {'top_left': (28, 28, 32), 'top_right': (52, 24, 42), 'bottom_left': (15, 15, 18), 'bottom_right': (32, 13, 24)},
-            {'top_left': (20, 20, 24), 'top_right': (44, 16, 34), 'bottom_left': (11, 11, 14), 'bottom_right': (24, 9, 20)},
-            {'top_left': (30, 30, 34), 'top_right': (54, 26, 44), 'bottom_left': (16, 16, 19), 'bottom_right': (34, 14, 25)},
-            {'top_left': (25, 25, 29), 'top_right': (49, 21, 39), 'bottom_left': (13, 13, 16), 'bottom_right': (29, 11, 22)},
-            {'top_left': (23, 23, 27), 'top_right': (47, 19, 37), 'bottom_left': (12, 12, 15), 'bottom_right': (27, 10, 21)},
-            {'top_left': (27, 27, 31), 'top_right': (51, 23, 41), 'bottom_left': (14, 14, 17), 'bottom_right': (31, 12, 23)},
-            {'top_left': (21, 21, 25), 'top_right': (45, 17, 35), 'bottom_left': (11, 11, 14), 'bottom_right': (25, 9, 20)},
-            
-            # Dark Slate + Cyan (71-80) - Professional and calm
-            {'top_left': (22, 26, 30), 'top_right': (12, 32, 42), 'bottom_left': (12, 14, 17), 'bottom_right': (6, 18, 25)},
-            {'top_left': (24, 28, 32), 'top_right': (14, 34, 44), 'bottom_left': (13, 15, 18), 'bottom_right': (7, 19, 26)},
-            {'top_left': (20, 24, 28), 'top_right': (10, 30, 40), 'bottom_left': (11, 13, 16), 'bottom_right': (5, 17, 24)},
-            {'top_left': (26, 30, 34), 'top_right': (16, 36, 46), 'bottom_left': (14, 16, 19), 'bottom_right': (8, 20, 27)},
-            {'top_left': (18, 22, 26), 'top_right': (8, 28, 38), 'bottom_left': (10, 12, 15), 'bottom_right': (4, 16, 23)},
-            {'top_left': (28, 32, 36), 'top_right': (18, 38, 48), 'bottom_left': (15, 17, 20), 'bottom_right': (9, 21, 28)},
-            {'top_left': (23, 27, 31), 'top_right': (13, 33, 43), 'bottom_left': (12, 14, 17), 'bottom_right': (6, 18, 25)},
-            {'top_left': (21, 25, 29), 'top_right': (11, 31, 41), 'bottom_left': (11, 13, 16), 'bottom_right': (5, 17, 24)},
-            {'top_left': (25, 29, 33), 'top_right': (15, 35, 45), 'bottom_left': (13, 15, 18), 'bottom_right': (7, 19, 26)},
-            {'top_left': (19, 23, 27), 'top_right': (9, 29, 39), 'bottom_left': (10, 12, 15), 'bottom_right': (4, 16, 23)},
-            
-            # Deep Purple + Electric Violet (81-90) - Rich and immersive
-            {'top_left': (28, 14, 38), 'top_right': (42, 22, 52), 'bottom_left': (16, 8, 22), 'bottom_right': (24, 12, 32)},
-            {'top_left': (30, 16, 40), 'top_right': (44, 24, 54), 'bottom_left': (17, 9, 23), 'bottom_right': (25, 13, 33)},
-            {'top_left': (26, 12, 36), 'top_right': (40, 20, 50), 'bottom_left': (15, 7, 21), 'bottom_right': (23, 11, 31)},
-            {'top_left': (32, 18, 42), 'top_right': (46, 26, 56), 'bottom_left': (18, 10, 24), 'bottom_right': (26, 14, 34)},
-            {'top_left': (24, 10, 34), 'top_right': (38, 18, 48), 'bottom_left': (14, 6, 20), 'bottom_right': (22, 10, 30)},
-            {'top_left': (34, 20, 44), 'top_right': (48, 28, 58), 'bottom_left': (19, 11, 25), 'bottom_right': (27, 15, 35)},
-            {'top_left': (29, 15, 39), 'top_right': (43, 23, 53), 'bottom_left': (16, 8, 22), 'bottom_right': (24, 12, 32)},
-            {'top_left': (27, 13, 37), 'top_right': (41, 21, 51), 'bottom_left': (15, 7, 21), 'bottom_right': (23, 11, 31)},
-            {'top_left': (31, 17, 41), 'top_right': (45, 25, 55), 'bottom_left': (17, 9, 23), 'bottom_right': (25, 13, 33)},
-            {'top_left': (25, 11, 35), 'top_right': (39, 19, 49), 'bottom_left': (14, 6, 20), 'bottom_right': (22, 10, 30)},
-            
-            # Dark Teal + Coral (91-100) - Balanced warm-cool contrast
-            {'top_left': (12, 36, 38), 'top_right': (44, 28, 24), 'bottom_left': (7, 20, 22), 'bottom_right': (25, 16, 14)},
-            {'top_left': (14, 38, 40), 'top_right': (46, 30, 26), 'bottom_left': (8, 21, 23), 'bottom_right': (26, 17, 15)},
-            {'top_left': (10, 34, 36), 'top_right': (42, 26, 22), 'bottom_left': (6, 19, 21), 'bottom_right': (24, 15, 13)},
-            {'top_left': (16, 40, 42), 'top_right': (48, 32, 28), 'bottom_left': (9, 22, 24), 'bottom_right': (28, 18, 16)},
-            {'top_left': (8, 32, 34), 'top_right': (40, 24, 20), 'bottom_left': (5, 18, 20), 'bottom_right': (22, 14, 12)},
-            {'top_left': (18, 42, 44), 'top_right': (50, 34, 30), 'bottom_left': (10, 23, 25), 'bottom_right': (30, 19, 17)},
-            {'top_left': (13, 37, 39), 'top_right': (45, 29, 25), 'bottom_left': (7, 20, 22), 'bottom_right': (25, 16, 14)},
-            {'top_left': (11, 35, 37), 'top_right': (43, 27, 23), 'bottom_left': (6, 19, 21), 'bottom_right': (24, 15, 13)},
-            {'top_left': (15, 39, 41), 'top_right': (47, 31, 27), 'bottom_left': (8, 21, 23), 'bottom_right': (26, 17, 15)},
-            {'top_left': (9, 33, 35), 'top_right': (41, 25, 21), 'bottom_left': (5, 18, 20), 'bottom_right': (23, 14, 12)},
-        ]
-        
-    def calculate_life_weeks(self, birth_date):
-        """
-        Calculate weeks lived and total weeks in expected lifespan.
-        
-        Args:
-            birth_date: Date of birth (datetime.date object)
-            
-        Returns:
-            Tuple of (weeks_lived, total_weeks, weeks_remaining, days_lived, total_days, days_remaining)
-        """
-        today = date.today()
-        expected_lifespan_years = 90  # Average lifespan, can be customized
-        total_weeks = expected_lifespan_years * 52
-        total_days = expected_lifespan_years * 365
-        
-        days_lived = (today - birth_date).days
-        weeks_lived = days_lived // 7
-        weeks_remaining = total_weeks - weeks_lived
-        days_remaining = total_days - days_lived
-        
-        return weeks_lived, total_weeks, weeks_remaining, days_lived, total_days, days_remaining
-    
-    def calculate_year_weeks(self, start_date=None, end_date=None):
-        """
-        Calculate weeks elapsed and remaining in a period.
-        
-        Args:
-            start_date: Start date of the period (datetime.date object). If None, uses Jan 1 of current year.
-            end_date: End date of the period (datetime.date object). If None, uses Dec 31 of current year.
-        
-        Returns:
-            Tuple of (weeks_elapsed, total_weeks, weeks_remaining, days_elapsed, total_days, days_remaining)
-        """
-        today = date.today()
-        
-        # Use custom dates if provided, otherwise use current year
-        if start_date is None:
-            period_start = date(today.year, 1, 1)
-        else:
-            period_start = start_date
-            
-        if end_date is None:
-            period_end = date(today.year, 12, 31)
-        else:
-            period_end = end_date
-        
-        # Calculate total days and weeks in the period
-        total_days = (period_end - period_start).days + 1  # Include both start and end days
-        total_weeks = (total_days + 6) // 7  # Round up to include partial weeks
-        
-        # Calculate days and weeks elapsed
-        if today < period_start:
-            days_elapsed = 0
-            weeks_elapsed = 0
-        elif today > period_end:
-            days_elapsed = total_days
-            weeks_elapsed = total_weeks
-        else:
-            days_elapsed = (today - period_start).days + 1  # Include today
-            weeks_elapsed = days_elapsed // 7
-            
-        # Cap at total
-        if weeks_elapsed > total_weeks:
-            weeks_elapsed = total_weeks
-        if days_elapsed > total_days:
-            days_elapsed = total_days
-            
-        weeks_remaining = total_weeks - weeks_elapsed
-        days_remaining = total_days - days_elapsed
-        
-        return weeks_elapsed, total_weeks, weeks_remaining, days_elapsed, total_days, days_remaining
-    
-    def draw_grid(self, filled_count, total_count, title_text, subtitle_text,
-                  grid_cols=None, grid_rows=None, start_date=None, end_date=None,
-                  current_day_index=None, footer_text=None, dots_per_period=7):
-        """
-        Draw the calendar grid with dots.
-        
-        Args:
-            filled_count: Number of filled dots
-            total_count: Total number of dots to show
-            title_text: Title to display (single line)
-            subtitle_text: (Unused in current minimal UI, kept for backward compatibility)
-            footer_text: Optional text to show below the grid (e.g., \"64d left · 28%\")
-            dots_per_period: Number of dots per period (7 for weeks, 30 for months, etc.)
-            
-        Returns:
-            PIL Image object
-        """
-        # Create image with beautiful sophisticated background
-        img = Image.new('RGB', (self.width, self.height), self.bg_color)
-        draw = ImageDraw.Draw(img)
-        
-        # Create beautiful multi-layer gradient background with vibrant colors (OPTIMIZED)
-        if HAS_NUMPY:
-            # Get one of 100 beautiful color palettes optimized for dark UI
-            color_palettes = self.get_color_palettes()
-            
-            # Mix 2-3 color palettes for more noticeable, vibrant gradients
-            num_palettes = random.choice([2, 3])  # Randomly choose 2 or 3 palettes to mix
-            selected_palettes = random.sample(color_palettes, num_palettes)
-            
-            # Blend weights for mixing (sum to 1.0)
-            if num_palettes == 2:
-                weights = [0.5, 0.5]  # Equal blend
-            else:  # 3 palettes
-                w1 = random.uniform(0.3, 0.5)
-                w2 = random.uniform(0.25, 0.4)
-                w3 = 1.0 - w1 - w2
-                weights = [w1, w2, w3]
-            
-            # Blend the palettes together for each corner
-            def blend_corner(corner_name):
-                blended = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-                for palette, weight in zip(selected_palettes, weights):
-                    blended += np.array(palette[corner_name], dtype=np.float32) * weight
-                return blended
-            
-            # Blend all corners from multiple palettes
-            top_left_base = blend_corner('top_left')
-            top_right_base = blend_corner('top_right')
-            bottom_left_base = blend_corner('bottom_left')
-            bottom_right_base = blend_corner('bottom_right')
-            
-            # Apply slight variations for uniqueness and boost vibrancy
-            variation = random.randint(-2, 2)
-            boost = random.uniform(1.0, 1.15)  # Slight boost to make colors more noticeable
-            
-            top_left = np.clip((top_left_base + variation) * boost, 10, 55)
-            top_right = np.clip((top_right_base + random.randint(-2, 2)) * boost, 10, 55)
-            bottom_left = np.clip((bottom_left_base + variation) * boost, 5, 35)
-            bottom_right = np.clip((bottom_right_base + random.randint(-2, 2)) * boost, 5, 35)
-            
-            # Ensure proper dtype
-            top_left = top_left.astype(np.float32)
-            top_right = top_right.astype(np.float32)
-            bottom_left = bottom_left.astype(np.float32)
-            bottom_right = bottom_right.astype(np.float32)
-            
-            # VECTORIZED gradient generation (much faster!)
-            center_x, center_y = self.width / 2, self.height / 2
-            max_dist = math.sqrt(center_x**2 + center_y**2)
-            
-            # Create coordinate grids (vectorized)
-            y_coords, x_coords = np.mgrid[0:self.height, 0:self.width].astype(np.float32)
-            nx = x_coords / self.width
-            ny = y_coords / self.height
-            
-            # Bilinear interpolation (vectorized)
-            top = top_left[:, None, None] * (1 - nx) + top_right[:, None, None] * nx
-            bottom = bottom_left[:, None, None] * (1 - nx) + bottom_right[:, None, None] * nx
-            color = top * (1 - ny) + bottom * ny
-            
-            # Radial distance (vectorized)
-            dist = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
-            
-            # Vignette effect (vectorized) - reduced to let mixed colors show through
-            vignette = 1.0 - (dist / max_dist) * 0.15  # Less darkening to preserve vibrant mixed colors
-            color = color * vignette
-            
-            # Center glow effect (vectorized) - enhanced for more vibrant center
-            center_glow = 1.0 + (1.0 - dist / max_dist) * 0.2  # More noticeable brightening for mixed colors
-            color = np.clip(color * center_glow, 0, 255)
-            
-            # Subtle noise for texture (vectorized)
-            noise = np.random.normal(1.0, 0.025, (3, self.height, self.width)).astype(np.float32)
-            color = np.clip(color * noise, 0, 255)
-            
-            # Transpose to (height, width, 3) and convert to uint8
-            img_array = color.transpose(1, 2, 0).astype(np.uint8)
-            
-            # Convert numpy array to PIL Image
-            img = Image.fromarray(img_array, 'RGB')
-            draw = ImageDraw.Draw(img)
-        else:
-            # Fallback: Enhanced gradient without numpy (randomized colors)
-            base_dark = 10 + random.randint(0, 8)
-            hue_shift_1 = random.randint(-5, 5)
-            hue_shift_2 = random.randint(-5, 5)
-            top_base = 20 + random.randint(0, 12)
-            
-            top_left = (
-                max(8, min(45, top_base + hue_shift_1)),
-                max(8, min(45, top_base + random.randint(2, 6))),
-                max(8, min(45, top_base + random.randint(4, 8)))
-            )
-            top_right = (
-                max(8, min(45, top_base + random.randint(2, 6))),
-                max(8, min(45, top_base + hue_shift_2)),
-                max(8, min(45, top_base + random.randint(2, 6)))
-            )
-            bottom_left = (
-                max(5, min(25, base_dark + hue_shift_1)),
-                max(5, min(25, base_dark + random.randint(2, 6))),
-                max(5, min(25, base_dark + random.randint(4, 8)))
-            )
-            bottom_right = (
-                max(5, min(25, base_dark + random.randint(2, 6))),
-                max(5, min(25, base_dark + hue_shift_2)),
-                max(5, min(25, base_dark + random.randint(2, 6)))
-            )
-            
-            chunk_size = max(1, self.height // 200)
-            for chunk_start in range(0, self.height, chunk_size):
-                chunk_end = min(chunk_start + chunk_size, self.height)
-                y_center = (chunk_start + chunk_end) // 2
-                ny = y_center / self.height
-                
-                # Interpolate top and bottom
-                top_r = int(top_left[0] * (1 - ny) + top_right[0] * ny)
-                top_g = int(top_left[1] * (1 - ny) + top_right[1] * ny)
-                top_b = int(top_left[2] * (1 - ny) + top_right[2] * ny)
-                bottom_r = int(bottom_left[0] * (1 - ny) + bottom_right[0] * ny)
-                bottom_g = int(bottom_left[1] * (1 - ny) + bottom_right[1] * ny)
-                bottom_b = int(bottom_left[2] * (1 - ny) + bottom_right[2] * ny)
-                
-                # Draw horizontal gradient
-                for x in range(0, self.width, 5):
-                    nx = x / self.width
-                    r = int(top_r * (1 - nx) + bottom_r * nx)
-                    g = int(top_g * (1 - nx) + bottom_g * nx)
-                    b = int(top_b * (1 - nx) + bottom_b * nx)
-                    draw.rectangle([(x, chunk_start), (min(x + 5, self.width), chunk_end)], fill=(r, g, b))
-        
-        # Try to load a unique/modern font, fallback to alternatives
-        title_font = None
-        footer_font = None
-        try:
-            # Try unique modern fonts first (Montserrat, Poppins, Raleway, etc.)
-            font_paths = [
-                # Popular unique fonts
-                "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf",
-                "/usr/share/fonts/truetype/poppins/Poppins-Bold.ttf",
-                "/usr/share/fonts/truetype/raleway/Raleway-Bold.ttf",
-                "/usr/share/fonts/truetype/source-sans-pro/SourceSansPro-Bold.ttf",
-                "/usr/share/fonts/truetype/work-sans/WorkSans-Bold.ttf",
-                "/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
-                "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf",
-                "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-            ]
-            for font_path in font_paths:
-                try:
-                    # Modern larger fonts with better readability
-                    title_font = ImageFont.truetype(font_path, 32)
-                    footer_font = ImageFont.truetype(font_path, 18)  # Larger footer
-                    break
-                except:
-                    continue
-        except:
-            pass
-        
-        # Fallback to default if no font found
-        if title_font is None:
-            try:
-                title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-                footer_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
-            except:
-                title_font = ImageFont.load_default()
-                footer_font = ImageFont.load_default()
-        
-        # Use footer_font if available, otherwise use title_font
-        if footer_font is None:
-            footer_font = title_font
-        
-        # Decide grid resolution. If specific grid sizes are provided,
-        # use them (e.g. 52 weeks x 90 years). Otherwise, fall back to
-        # the maximum grid that fits the screen.
-        cols = grid_cols if grid_cols is not None else self.cols
-        rows = grid_rows if grid_rows is not None else self.rows
-        total_dots_to_show = min(total_count, cols * rows)
-        # How many columns actually used given the number of dots
-        used_cols = min(cols, total_dots_to_show) if total_dots_to_show > 0 else cols
-        grid_width = used_cols * (self.dot_size + self.spacing) - self.spacing
-        used_rows = (total_dots_to_show + cols - 1) // cols if total_dots_to_show > 0 else rows
-        grid_height = used_rows * (self.dot_size + self.spacing) - self.spacing
-        
-        start_x = (self.width - grid_width) // 2
-        # Center grid vertically
-        start_y = (self.height - grid_height) // 2
+        self.theme = DailyTheme()
+        self._load_fonts()
 
-        # For a cleaner, more minimal UI we no longer draw a card background.
-        # Keep some virtual "card" bounds for aligning title/footer with the grid.
-        card_left = start_x
-        card_top = start_y
-        card_right = start_x + grid_width
-        card_bottom = start_y + grid_height
-        
-        # Draw title centered and close to the dots (aligned to card width)
-        if title_text:
-            title_bbox = draw.textbbox((0, 0), title_text, font=title_font)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_height = title_bbox[3] - title_bbox[1]
-            card_width = card_right - card_left
-            title_x = card_left + (card_width - title_width) // 2
-            # Position title with more breathing room for modern look
-            title_y = max(40, card_top - title_height - 50)
-            
-            # Modern title color: bright white with better contrast
-            title_color = (255, 255, 255)
-            # Draw subtle shadow/glow effect for depth
-            shadow_offset = 2
-            draw.text((title_x + shadow_offset, title_y + shadow_offset), title_text, 
-                     fill=(0, 0, 0), font=title_font)
-            draw.text((title_x, title_y), title_text, fill=title_color, font=title_font)
-        
-        # Modern dot palette with vibrant colors and better contrast
-        # Base colors for filled and empty dots
-        filled_dot_base = (255, 255, 255)     # pure white for filled dots
-        empty_dot_base = (35, 35, 40)         # darker gray for empty dots
-        today_dot = (100, 200, 255)          # bright cyan/blue highlight (modern accent)
-        today_ring = (50, 150, 220)          # brighter ring for today's dot
-        today_glow = (30, 100, 150)          # outer glow color
-        
-        # Color variations for weeks/months (very distinct colors for easy tracking)
-        # Each period (week/month) gets a clearly different color to distinguish groups
-        period_colors_filled = [
-            (255, 255, 255),      # Pure white - Period 1 (Week 1, Month 1, etc.)
-            (180, 210, 255),      # Light blue - Period 2 (very visible blue tint)
-            (255, 210, 180),      # Light coral - Period 3 (very visible orange tint)
-            (180, 255, 210),      # Light green - Period 4 (very visible green tint)
-        ]
-        period_colors_empty = [
-            (35, 35, 40),         # Dark gray - Period 1
-            (35, 38, 50),         # Dark blue-gray - Period 2 (more distinct)
-            (50, 38, 35),         # Dark orange-gray - Period 3 (more distinct)
-            (38, 50, 40),         # Dark green-gray - Period 4 (more distinct)
-        ]
-        
-        # Track previous period to draw separators
-        prev_period_index = -1
+    # ---- Font loading ----
 
-        # Draw dots
-        dot_index = 0
-        for row in range(rows):
-            for col in range(cols):
-                if dot_index >= total_dots_to_show:
-                    break
-                    
-                x = start_x + col * (self.dot_size + self.spacing)
-                y = start_y + row * (self.dot_size + self.spacing)
-                
-                # Determine which period (week/month) this dot belongs to
-                period_index = dot_index // dots_per_period
-                period_color_index = period_index % len(period_colors_filled)
-                
-                # Draw subtle separator line between periods (weeks/months)
-                # Draw a thin vertical line before the first dot of each new period
-                if period_index != prev_period_index and prev_period_index != -1 and col > 0:
-                    # Draw a subtle separator line between periods
-                    separator_x = x - self.spacing // 2
-                    separator_color = (70, 70, 75)  # Subtle gray separator
-                    # Draw vertical line spanning the dot height
-                    draw.line(
-                        [(separator_x, y - self.dot_size // 2), 
-                         (separator_x, y + self.dot_size + self.spacing // 2)],
-                        fill=separator_color,
-                        width=2
-                    )
-                prev_period_index = period_index
-                
-                # Determine if this dot should be filled
-                if dot_index < filled_count:
-                    # Highlight current day with modern glow effect
-                    if current_day_index is not None and dot_index == current_day_index:
-                        # Draw outer glow (largest circle)
-                        glow_pad = 6
-                        draw.ellipse(
-                            [x - glow_pad, y - glow_pad, 
-                             x + self.dot_size + glow_pad, y + self.dot_size + glow_pad],
-                            fill=today_glow,
-                            outline=None
-                        )
-                        # Draw middle ring
-                        ring_pad = 3
-                        draw.ellipse(
-                            [x - ring_pad, y - ring_pad, 
-                             x + self.dot_size + ring_pad, y + self.dot_size + ring_pad],
-                            fill=today_ring,
-                            outline=None
-                        )
-                        dot_color = today_dot
-                    else:
-                        # Use period-specific color for filled dots
-                        filled_dot = period_colors_filled[period_color_index]
-                        # Add subtle glow to filled dots for modern look
-                        glow_pad = 2
-                        # Darker glow that matches the period color (more visible)
-                        glow_color_r = max(40, filled_dot[0] - 30)
-                        glow_color_g = max(40, filled_dot[1] - 30)
-                        glow_color_b = max(40, filled_dot[2] - 30)
-                        draw.ellipse(
-                            [x - glow_pad, y - glow_pad, 
-                             x + self.dot_size + glow_pad, y + self.dot_size + glow_pad],
-                            fill=(glow_color_r, glow_color_g, glow_color_b),
-                            outline=None
-                        )
-                        dot_color = filled_dot
-                else:
-                    # Use period-specific color for empty dots
-                    dot_color = period_colors_empty[period_color_index]
-                
-                # Draw dot as a circle with modern styling
-                draw.ellipse(
-                    [x, y, x + self.dot_size, y + self.dot_size],
-                    fill=dot_color,
-                    outline=None
-                )
-                
-                # Add subtle highlight to filled dots for depth (modern 3D effect)
-                if dot_index < filled_count and (current_day_index is None or dot_index != current_day_index):
-                    highlight_size = self.dot_size // 3
-                    highlight_x = x + self.dot_size // 3
-                    highlight_y = y + self.dot_size // 3
-                    # Use lighter white for highlight effect
-                    draw.ellipse(
-                        [highlight_x, highlight_y, 
-                         highlight_x + highlight_size, highlight_y + highlight_size],
-                        fill=(255, 255, 255),
-                        outline=None
-                    )
-                
-                dot_index += 1
-            
-            if dot_index >= total_dots_to_show:
-                break
+    def _load_fonts(self):
+        """Load fonts with sizes scaled to the output dimensions."""
+        # Scale factor: 1.0 at 1080p's smaller dimension
+        scale = min(self.width, self.height) / 1080.0
 
-        # Draw footer text (e.g., \"64d left · 28%\") centered below the grid
-        if footer_text:
-            footer_bbox = draw.textbbox((0, 0), footer_text, font=footer_font)
-            footer_width = footer_bbox[2] - footer_bbox[0]
-            card_width = card_right - card_left
-            footer_x = card_left + (card_width - footer_width) // 2
-            # More spacing for modern look
-            footer_y = card_bottom + 40
+        self.title_font_size  = max(12, int(32 * scale))
+        self.footer_font_size = max(9,  int(18 * scale))
+        self.label_font_size  = max(8,  int(16 * scale))
 
-            # Modern footer color: bright white with better contrast
-            footer_color = (220, 220, 225)
-            # Add subtle shadow for depth
-            shadow_offset = 1
-            draw.text((footer_x + shadow_offset, footer_y + shadow_offset), footer_text, 
-                     fill=(0, 0, 0), font=footer_font)
-            draw.text((footer_x, footer_y), footer_text, fill=footer_color, font=footer_font)
-        
-        return img
-
-    def draw_month_rows_year_calendar(self, period_start, period_end, title_text, footer_text):
-        """
-        Draw a Year Calendar where **each row is a month** and each column is a day (1..31).
-
-        This makes it much easier to track month progress at a glance compared to a continuous
-        day stream.
-
-        Rendering rules:
-        - Rows: one per month between period_start and period_end (inclusive).
-        - Columns: 31 (days). Days that don't exist in that month are shown as faint placeholders.
-        - Days outside the selected period range are also shown as faint placeholders.
-        - Filled vs empty is based on today's date (date.today()) intersected with the period.
-        - Week color grouping is done within each month row: every 7 columns is a "week group".
-        """
-        # --- Background + fonts (kept consistent with draw_grid) ---
-        img = Image.new('RGB', (self.width, self.height), self.bg_color)
-        draw = ImageDraw.Draw(img)
-
-        # Create beautiful multi-layer gradient background with vibrant colors (OPTIMIZED)
-        if HAS_NUMPY:
-            # Get one of 100 beautiful color palettes optimized for dark UI
-            color_palettes = self.get_color_palettes()
-            
-            # Mix 2-3 color palettes for more noticeable, vibrant gradients
-            num_palettes = random.choice([2, 3])  # Randomly choose 2 or 3 palettes to mix
-            selected_palettes = random.sample(color_palettes, num_palettes)
-            
-            # Blend weights for mixing (sum to 1.0)
-            if num_palettes == 2:
-                weights = [0.5, 0.5]  # Equal blend
-            else:  # 3 palettes
-                w1 = random.uniform(0.3, 0.5)
-                w2 = random.uniform(0.25, 0.4)
-                w3 = 1.0 - w1 - w2
-                weights = [w1, w2, w3]
-            
-            # Blend the palettes together for each corner
-            def blend_corner(corner_name):
-                blended = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-                for palette, weight in zip(selected_palettes, weights):
-                    blended += np.array(palette[corner_name], dtype=np.float32) * weight
-                return blended
-            
-            # Blend all corners from multiple palettes
-            top_left_base = blend_corner('top_left')
-            top_right_base = blend_corner('top_right')
-            bottom_left_base = blend_corner('bottom_left')
-            bottom_right_base = blend_corner('bottom_right')
-            
-            # Apply slight variations for uniqueness and boost vibrancy
-            variation = random.randint(-2, 2)
-            boost = random.uniform(1.0, 1.15)  # Slight boost to make colors more noticeable
-            
-            top_left = np.clip((top_left_base + variation) * boost, 10, 55)
-            top_right = np.clip((top_right_base + random.randint(-2, 2)) * boost, 10, 55)
-            bottom_left = np.clip((bottom_left_base + variation) * boost, 5, 35)
-            bottom_right = np.clip((bottom_right_base + random.randint(-2, 2)) * boost, 5, 35)
-            
-            # Ensure proper dtype
-            top_left = top_left.astype(np.float32)
-            top_right = top_right.astype(np.float32)
-            bottom_left = bottom_left.astype(np.float32)
-            bottom_right = bottom_right.astype(np.float32)
-            
-            # VECTORIZED gradient generation (much faster!)
-            center_x, center_y = self.width / 2, self.height / 2
-            max_dist = math.sqrt(center_x**2 + center_y**2)
-            
-            # Create coordinate grids (vectorized)
-            y_coords, x_coords = np.mgrid[0:self.height, 0:self.width].astype(np.float32)
-            nx = x_coords / self.width
-            ny = y_coords / self.height
-            
-            # Bilinear interpolation (vectorized)
-            top = top_left[:, None, None] * (1 - nx) + top_right[:, None, None] * nx
-            bottom = bottom_left[:, None, None] * (1 - nx) + bottom_right[:, None, None] * nx
-            color = top * (1 - ny) + bottom * ny
-            
-            # Radial distance (vectorized)
-            dist = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
-            
-            # Vignette effect (vectorized) - reduced to let mixed colors show through
-            vignette = 1.0 - (dist / max_dist) * 0.15  # Less darkening to preserve vibrant mixed colors
-            color = color * vignette
-            
-            # Center glow effect (vectorized) - enhanced for more vibrant center
-            center_glow = 1.0 + (1.0 - dist / max_dist) * 0.2  # More noticeable brightening for mixed colors
-            color = np.clip(color * center_glow, 0, 255)
-            
-            # Subtle noise for texture (vectorized)
-            noise = np.random.normal(1.0, 0.025, (3, self.height, self.width)).astype(np.float32)
-            color = np.clip(color * noise, 0, 255)
-            
-            # Transpose to (height, width, 3) and convert to uint8
-            img_array = color.transpose(1, 2, 0).astype(np.uint8)
-            
-            # Convert numpy array to PIL Image
-            img = Image.fromarray(img_array, 'RGB')
-            draw = ImageDraw.Draw(img)
-        else:
-            # Fallback: Enhanced gradient without numpy (randomized colors)
-            base_dark = 10 + random.randint(0, 8)
-            hue_shift_1 = random.randint(-5, 5)
-            hue_shift_2 = random.randint(-5, 5)
-            top_base = 20 + random.randint(0, 12)
-            
-            top_left = (
-                max(8, min(45, top_base + hue_shift_1)),
-                max(8, min(45, top_base + random.randint(2, 6))),
-                max(8, min(45, top_base + random.randint(4, 8)))
-            )
-            top_right = (
-                max(8, min(45, top_base + random.randint(2, 6))),
-                max(8, min(45, top_base + hue_shift_2)),
-                max(8, min(45, top_base + random.randint(2, 6)))
-            )
-            bottom_left = (
-                max(5, min(25, base_dark + hue_shift_1)),
-                max(5, min(25, base_dark + random.randint(2, 6))),
-                max(5, min(25, base_dark + random.randint(4, 8)))
-            )
-            bottom_right = (
-                max(5, min(25, base_dark + random.randint(2, 6))),
-                max(5, min(25, base_dark + hue_shift_2)),
-                max(5, min(25, base_dark + random.randint(2, 6)))
-            )
-            
-            chunk_size = max(1, self.height // 200)
-            for chunk_start in range(0, self.height, chunk_size):
-                chunk_end = min(chunk_start + chunk_size, self.height)
-                y_center = (chunk_start + chunk_end) // 2
-                ny = y_center / self.height
-                
-                # Interpolate top and bottom
-                top_r = int(top_left[0] * (1 - ny) + top_right[0] * ny)
-                top_g = int(top_left[1] * (1 - ny) + top_right[1] * ny)
-                top_b = int(top_left[2] * (1 - ny) + top_right[2] * ny)
-                bottom_r = int(bottom_left[0] * (1 - ny) + bottom_right[0] * ny)
-                bottom_g = int(bottom_left[1] * (1 - ny) + bottom_right[1] * ny)
-                bottom_b = int(bottom_left[2] * (1 - ny) + bottom_right[2] * ny)
-                
-                # Draw horizontal gradient
-                for x in range(0, self.width, 5):
-                    nx = x / self.width
-                    r = int(top_r * (1 - nx) + bottom_r * nx)
-                    g = int(top_g * (1 - nx) + bottom_g * nx)
-                    b = int(top_b * (1 - nx) + bottom_b * nx)
-                    draw.rectangle([(x, chunk_start), (min(x + 5, self.width), chunk_end)], fill=(r, g, b))
-
-        # Try to load a modern font, fallback to DejaVu
-        title_font = None
-        footer_font = None
-        label_font = None
+        # Preferred modern fonts (ordered by preference)
         font_paths = [
             "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf",
             "/usr/share/fonts/truetype/poppins/Poppins-Bold.ttf",
             "/usr/share/fonts/truetype/raleway/Raleway-Bold.ttf",
             "/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
             "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
         ]
-        for font_path in font_paths:
+
+        self.title_font = None
+        self.footer_font = None
+        self.label_font = None
+
+        for path in font_paths:
             try:
-                title_font = ImageFont.truetype(font_path, 32)
-                footer_font = ImageFont.truetype(font_path, 18)
-                label_font = ImageFont.truetype(font_path, 16)
+                self.title_font  = ImageFont.truetype(path, self.title_font_size)
+                self.footer_font = ImageFont.truetype(path, self.footer_font_size)
+                self.label_font  = ImageFont.truetype(path, self.label_font_size)
                 break
-            except Exception:
+            except (OSError, IOError):
                 continue
-        if title_font is None:
-            title_font = ImageFont.load_default()
-            footer_font = ImageFont.load_default()
-            label_font = ImageFont.load_default()
 
-        # --- Layout ---
-        # Build the month list between start and end (inclusive)
-        months = []
-        year, month = period_start.year, period_start.month
-        while (year, month) <= (period_end.year, period_end.month):
-            months.append((year, month))
-            if month == 12:
-                year += 1
-                month = 1
-            else:
-                month += 1
+        # Ultimate fallback
+        if self.title_font is None:
+            self.title_font  = ImageFont.load_default()
+            self.footer_font = ImageFont.load_default()
+            self.label_font  = ImageFont.load_default()
 
-        cols = 31
-        rows = max(1, len(months))
-        total_dots_to_show = cols * rows
+    # ---- Layout computation ----
 
-        grid_width = cols * (self.dot_size + self.spacing) - self.spacing
-        grid_height = rows * (self.dot_size + self.spacing) - self.spacing
-        start_x = (self.width - grid_width) // 2
-        start_y = (self.height - grid_height) // 2
+    def _compute_layout(self, cols, rows, left_margin, right_margin,
+                        top_margin, bottom_margin):
+        """
+        Compute optimal dot_size, spacing, and grid origin for a given grid.
 
-        # Title (centered)
-        if title_text:
-            title_bbox = draw.textbbox((0, 0), title_text, font=title_font)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_height = title_bbox[3] - title_bbox[1]
-            title_x = start_x + (grid_width - title_width) // 2
-            title_y = max(40, start_y - title_height - 50)
-            draw.text((title_x + 2, title_y + 2), title_text, fill=(0, 0, 0), font=title_font)
-            draw.text((title_x, title_y), title_text, fill=(255, 255, 255), font=title_font)
+        The algorithm:
+        1. Calculate the largest cell that fits both horizontally and vertically.
+        2. Split the cell into dot (larger portion) and spacing (smaller portion),
+           using adaptive ratios so tiny dots get tighter gaps.
+        3. Center the resulting grid within the available area.
 
-        # --- Colors ---
-        # Distinct week-group colors (cycled within each month row)
-        period_colors_filled = [
-            (255, 255, 255),  # Week-group 1
-            (180, 210, 255),  # Week-group 2 (blue)
-            (255, 210, 180),  # Week-group 3 (coral)
-            (180, 255, 210),  # Week-group 4 (green)
-        ]
-        period_colors_empty = [
-            (35, 35, 40),
-            (35, 38, 50),
-            (50, 38, 35),
-            (38, 50, 40),
-        ]
+        Returns:
+            dict with keys: dot_size, spacing, start_x, start_y,
+                            grid_width, grid_height
+        """
+        available_w = self.width  - left_margin - right_margin
+        available_h = self.height - top_margin  - bottom_margin
 
-        today_dot = (100, 200, 255)
-        today_ring = (50, 150, 220)
-        today_glow = (30, 100, 150)
+        # Maximum cell size that fits in both dimensions
+        cell_w = available_w / max(1, cols)
+        cell_h = available_h / max(1, rows)
+        cell = min(cell_w, cell_h)
 
-        # Very faint placeholder for non-existing days and out-of-range days
-        disabled_dot = (22, 22, 28)
+        # Adaptive dot-to-spacing ratio: tighter gaps at small sizes
+        if cell <= 8:
+            dot_fraction = 0.65
+        elif cell <= 15:
+            dot_fraction = 0.55
+        else:
+            dot_fraction = 0.42  # More breathing room at larger sizes
 
-        # --- Draw monthly rows ---
+        dot_size = max(3, int(cell * dot_fraction))
+        spacing  = max(1, int(cell * (1.0 - dot_fraction)))
+
+        # Reasonable caps so desktop/4K doesn't produce absurdly large dots
+        dot_size = min(dot_size, 18)
+        spacing  = min(spacing, 24)
+
+        grid_width  = cols * (dot_size + spacing) - spacing
+        grid_height = rows * (dot_size + spacing) - spacing
+
+        start_x = left_margin + (available_w - grid_width)  // 2
+        start_y = top_margin  + (available_h - grid_height) // 2
+
+        return {
+            'dot_size':    dot_size,
+            'spacing':     spacing,
+            'start_x':     start_x,
+            'start_y':     start_y,
+            'grid_width':  grid_width,
+            'grid_height': grid_height,
+        }
+
+    # ---- Background rendering ----
+
+    def _draw_gradient_background(self):
+        """
+        Create a beautiful gradient background using the daily theme's corner colors.
+
+        Uses bilinear interpolation across 4 corners with:
+        - Radial vignette (darker edges)
+        - Center glow (brighter center)
+        - Subtle noise texture (organic feel)
+
+        Returns a PIL Image.
+        """
+        corners = self.theme.bg_corners
+        tl, tr = corners['top_left'], corners['top_right']
+        bl, br = corners['bottom_left'], corners['bottom_right']
+
+        if HAS_NUMPY:
+            tl_a = np.array(tl, dtype=np.float32)
+            tr_a = np.array(tr, dtype=np.float32)
+            bl_a = np.array(bl, dtype=np.float32)
+            br_a = np.array(br, dtype=np.float32)
+
+            # Coordinate grids (vectorized for speed)
+            y_coords, x_coords = np.mgrid[0:self.height, 0:self.width].astype(np.float32)
+            nx = x_coords / self.width
+            ny = y_coords / self.height
+
+            # Bilinear interpolation of the four corners
+            top    = tl_a[:, None, None] * (1 - nx) + tr_a[:, None, None] * nx
+            bottom = bl_a[:, None, None] * (1 - nx) + br_a[:, None, None] * nx
+            color  = top * (1 - ny) + bottom * ny
+
+            # Radial vignette (darken edges 15%)
+            cx, cy = self.width / 2, self.height / 2
+            max_dist = math.sqrt(cx ** 2 + cy ** 2)
+            dist = np.sqrt((x_coords - cx) ** 2 + (y_coords - cy) ** 2)
+            vignette = 1.0 - (dist / max_dist) * 0.15
+            color = color * vignette
+
+            # Center glow (brighten center 20%)
+            glow = 1.0 + (1.0 - dist / max_dist) * 0.20
+            color = np.clip(color * glow, 0, 255)
+
+            # Subtle noise texture
+            noise = np.random.normal(1.0, 0.025, (3, self.height, self.width)).astype(np.float32)
+            color = np.clip(color * noise, 0, 255)
+
+            img_array = color.transpose(1, 2, 0).astype(np.uint8)
+            return Image.fromarray(img_array, 'RGB')
+
+        else:
+            # Fallback: chunked bilinear interpolation (no numpy)
+            img = Image.new('RGB', (self.width, self.height), (10, 10, 15))
+            draw = ImageDraw.Draw(img)
+            chunk = max(1, self.height // 200)
+
+            for y_start in range(0, self.height, chunk):
+                y_end = min(y_start + chunk, self.height)
+                ny = (y_start + y_end) / 2 / self.height
+                for x in range(0, self.width, 5):
+                    nx_val = x / self.width
+                    r = int((tl[0]*(1-nx_val)+tr[0]*nx_val)*(1-ny) +
+                            (bl[0]*(1-nx_val)+br[0]*nx_val)*ny)
+                    g = int((tl[1]*(1-nx_val)+tr[1]*nx_val)*(1-ny) +
+                            (bl[1]*(1-nx_val)+br[1]*nx_val)*ny)
+                    b = int((tl[2]*(1-nx_val)+tr[2]*nx_val)*(1-ny) +
+                            (bl[2]*(1-nx_val)+br[2]*nx_val)*ny)
+                    draw.rectangle(
+                        [(x, y_start), (min(x + 5, self.width), y_end)],
+                        fill=(r, g, b)
+                    )
+            return img
+
+    # ---- Date calculations ----
+
+    def calculate_life_weeks(self, birth_date):
+        """
+        Calculate weeks lived and remaining in expected 90-year lifespan.
+
+        Returns:
+            (weeks_lived, total_weeks, weeks_remaining,
+             days_lived, total_days, days_remaining)
+        """
         today = date.today()
-        # Clamp for fill logic (if the period is fully in the past/future)
+        expected_years = 90
+        total_weeks = expected_years * 52
+        total_days  = expected_years * 365
+
+        days_lived = (today - birth_date).days
+        weeks_lived = days_lived // 7
+
+        return (weeks_lived, total_weeks, total_weeks - weeks_lived,
+                days_lived, total_days, total_days - days_lived)
+
+    def calculate_year_weeks(self, start_date=None, end_date=None):
+        """
+        Calculate days/weeks elapsed in a custom period.
+
+        Returns:
+            (weeks_elapsed, total_weeks, weeks_remaining,
+             days_elapsed, total_days, days_remaining)
+        """
+        today = date.today()
+        period_start = start_date if start_date else date(today.year, 1, 1)
+        period_end   = end_date   if end_date   else date(today.year, 12, 31)
+
+        total_days  = (period_end - period_start).days + 1
+        total_weeks = (total_days + 6) // 7
+
         if today < period_start:
-            filled_until = period_start - timedelta(days=1)  # nothing filled
+            days_elapsed = 0
         elif today > period_end:
-            filled_until = period_end  # everything in range filled
+            days_elapsed = total_days
+        else:
+            days_elapsed = (today - period_start).days + 1
+
+        days_elapsed  = min(days_elapsed, total_days)
+        weeks_elapsed = min(days_elapsed // 7, total_weeks)
+
+        return (weeks_elapsed, total_weeks, total_weeks - weeks_elapsed,
+                days_elapsed, total_days, total_days - days_elapsed)
+
+    # ---- Grid drawing (for life calendar and generic day grids) ----
+
+    def draw_grid(self, filled_count, total_count, title_text, footer_text,
+                  grid_cols, grid_rows, current_day_index=None, dots_per_period=7):
+        """
+        Draw a generic calendar dot grid.
+
+        Used for life calendars (52×90 weeks) and simple day grids.
+        Each dot is colored using the daily theme's filled/empty colors, with
+        period-based color cycling (e.g., every 7 dots = one week gets same color).
+
+        Args:
+            filled_count:     Number of filled (completed) dots.
+            total_count:      Total dots to render.
+            title_text:       Title string above the grid.
+            footer_text:      Footer string below the grid.
+            grid_cols:        Number of columns in the grid.
+            grid_rows:        Number of rows in the grid.
+            current_day_index: 0-based index of today's dot (or None).
+            dots_per_period:  Dots per color-group (7=week, 4=month, etc.).
+
+        Returns:
+            PIL Image object.
+        """
+        theme = self.theme
+
+        # ---- Background ----
+        img = self._draw_gradient_background()
+        draw = ImageDraw.Draw(img)
+
+        # ---- Layout (auto-scaled) ----
+        margin_x = max(20, int(self.width * 0.02))
+        margin_top = max(60, int(self.height * 0.09))
+        margin_bot = max(50, int(self.height * 0.07))
+        layout = self._compute_layout(
+            grid_cols, grid_rows,
+            left_margin=margin_x, right_margin=margin_x,
+            top_margin=margin_top, bottom_margin=margin_bot
+        )
+        dot_size = layout['dot_size']
+        spacing  = layout['spacing']
+        start_x  = layout['start_x']
+        start_y  = layout['start_y']
+
+        total_dots = min(total_count, grid_cols * grid_rows)
+
+        # ---- Title ----
+        if title_text:
+            bbox = draw.textbbox((0, 0), title_text, font=self.title_font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            tx = start_x + (layout['grid_width'] - tw) // 2
+            ty = max(10, start_y - th - max(20, int(30 * min(self.width, self.height) / 1080)))
+            # Shadow for depth
+            draw.text((tx + 2, ty + 2), title_text, fill=(0, 0, 0), font=self.title_font)
+            draw.text((tx, ty), title_text, fill=theme.title_color, font=self.title_font)
+
+        # ---- Draw dots ----
+        filled_colors = theme.filled_colors
+        empty_colors  = theme.empty_colors
+        sep_color     = theme.separator_color
+        prev_period   = -1
+        dot_idx       = 0
+        sep_width     = 1 if dot_size < 6 else 2
+
+        for row in range(grid_rows):
+            for col in range(grid_cols):
+                if dot_idx >= total_dots:
+                    break
+
+                x = start_x + col * (dot_size + spacing)
+                y = start_y + row * (dot_size + spacing)
+
+                # Period grouping (e.g., every 7 dots = one week)
+                period = dot_idx // dots_per_period
+                color_idx = period % len(filled_colors)
+
+                # Separator line between period groups
+                if period != prev_period and prev_period != -1 and col > 0:
+                    sx = x - spacing // 2
+                    draw.line(
+                        [(sx, y - dot_size // 4), (sx, y + dot_size + spacing // 4)],
+                        fill=sep_color, width=sep_width
+                    )
+                prev_period = period
+
+                # ---- Dot rendering ----
+                if dot_idx < filled_count:
+                    if current_day_index is not None and dot_idx == current_day_index:
+                        # Today's dot: three-layer glow
+                        glow_pad = max(3, dot_size // 2)
+                        ring_pad = max(2, dot_size // 4)
+                        draw.ellipse(
+                            [x - glow_pad, y - glow_pad,
+                             x + dot_size + glow_pad, y + dot_size + glow_pad],
+                            fill=theme.today_glow
+                        )
+                        draw.ellipse(
+                            [x - ring_pad, y - ring_pad,
+                             x + dot_size + ring_pad, y + dot_size + ring_pad],
+                            fill=theme.today_ring
+                        )
+                        dot_color = theme.today_dot
+                    else:
+                        # Filled dot with subtle glow
+                        fc = filled_colors[color_idx]
+                        glow_pad = max(1, dot_size // 7)
+                        glow_color = tuple(max(30, c - 40) for c in fc)
+                        draw.ellipse(
+                            [x - glow_pad, y - glow_pad,
+                             x + dot_size + glow_pad, y + dot_size + glow_pad],
+                            fill=glow_color
+                        )
+                        dot_color = fc
+                else:
+                    # Empty (future) dot
+                    dot_color = empty_colors[color_idx]
+
+                # The dot itself
+                draw.ellipse(
+                    [x, y, x + dot_size, y + dot_size],
+                    fill=dot_color
+                )
+
+                # Highlight on filled dots for subtle 3D depth
+                if dot_idx < filled_count and not (
+                    current_day_index is not None and dot_idx == current_day_index
+                ):
+                    hs = max(1, dot_size // 4)
+                    hx = x + dot_size // 3
+                    hy = y + dot_size // 4
+                    draw.ellipse([hx, hy, hx + hs, hy + hs], fill=(255, 255, 255))
+
+                dot_idx += 1
+
+            if dot_idx >= total_dots:
+                break
+
+        # ---- Footer ----
+        if footer_text:
+            bbox = draw.textbbox((0, 0), footer_text, font=self.footer_font)
+            fw = bbox[2] - bbox[0]
+            fx = start_x + (layout['grid_width'] - fw) // 2
+            fy = start_y + layout['grid_height'] + max(15, int(25 * min(self.width, self.height) / 1080))
+            draw.text((fx + 1, fy + 1), footer_text, fill=(0, 0, 0), font=self.footer_font)
+            draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
+
+        return img
+
+    # ---- Month-row calendar drawing ----
+
+    def draw_month_rows_year_calendar(self, period_start, period_end,
+                                      title_text, footer_text):
+        """
+        Draw a Year Calendar where each row is one month, columns are days 1–31.
+
+        Features:
+        - Month labels on the left (e.g., "Dec 2025")
+        - Weekly color grouping within each row (every 7 days)
+        - Vertical separator lines at week boundaries (day 7, 14, 21, 28)
+        - Today highlighted with a glowing accent dot
+        - Disabled (grayed out) dots for non-existent days and out-of-range days
+
+        Returns:
+            PIL Image object.
+        """
+        theme = self.theme
+
+        # ---- Background ----
+        img = self._draw_gradient_background()
+        draw = ImageDraw.Draw(img)
+
+        # ---- Build month list ----
+        months = []
+        y, m = period_start.year, period_start.month
+        while (y, m) <= (period_end.year, period_end.month):
+            months.append((y, m))
+            if m == 12:
+                y += 1
+                m = 1
+            else:
+                m += 1
+
+        num_months = max(1, len(months))
+        cols = 31  # max days in any month
+
+        # ---- Layout ----
+        # Estimate label width so we reserve enough left margin
+        scale = min(self.width, self.height) / 1080.0
+        label_w_estimate = max(40, int(8 * 0.6 * self.label_font_size))
+        label_pad = max(6, int(12 * scale))
+        left_margin  = label_w_estimate + label_pad + max(10, int(16 * scale))
+        right_margin = max(10, int(16 * scale))
+        top_margin   = max(50, int(90 * scale))
+        bottom_margin = max(40, int(70 * scale))
+
+        layout = self._compute_layout(
+            cols, num_months,
+            left_margin=left_margin, right_margin=right_margin,
+            top_margin=top_margin, bottom_margin=bottom_margin
+        )
+        dot_size = layout['dot_size']
+        spacing  = layout['spacing']
+        start_x  = layout['start_x']
+        start_y  = layout['start_y']
+        grid_w   = layout['grid_width']
+        grid_h   = layout['grid_height']
+
+        # ---- Title (centered above grid) ----
+        if title_text:
+            bbox = draw.textbbox((0, 0), title_text, font=self.title_font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            tx = start_x + (grid_w - tw) // 2
+            ty = max(10, start_y - th - max(15, int(25 * scale)))
+            draw.text((tx + 2, ty + 2), title_text, fill=(0, 0, 0), font=self.title_font)
+            draw.text((tx, ty), title_text, fill=theme.title_color, font=self.title_font)
+
+        # ---- Weekly vertical separators (after day 7, 14, 21, 28) ----
+        sep_w = 1 if dot_size < 6 else 2
+        sep_glow_color = tuple(max(0, c - 8) for c in theme.separator_color)
+        for week_boundary in (7, 14, 21, 28):
+            sx = start_x + week_boundary * (dot_size + spacing) - spacing // 2
+            # Glow lines flanking the separator
+            draw.line([(sx - 1, start_y - 4), (sx - 1, start_y + grid_h + 4)],
+                      fill=sep_glow_color, width=1)
+            draw.line([(sx + 1, start_y - 4), (sx + 1, start_y + grid_h + 4)],
+                      fill=sep_glow_color, width=1)
+            # Main separator
+            draw.line([(sx, start_y - 4), (sx, start_y + grid_h + 4)],
+                      fill=theme.separator_color, width=sep_w)
+
+        # ---- Filled-until date ----
+        today = date.today()
+        if today < period_start:
+            filled_until = period_start - timedelta(days=1)
+        elif today > period_end:
+            filled_until = period_end
         else:
             filled_until = today
 
-        # Month labels on the left (enhanced with subtle shadow)
-        label_color = (200, 200, 210)  # Brighter for better visibility
-        label_padding = 18
+        # ---- Draw month rows ----
+        filled_colors = theme.filled_colors
+        empty_colors  = theme.empty_colors
 
-        # Draw weekly separators (vertical) for readability: after day 7, 14, 21, 28
-        # Enhanced separators with subtle glow effect
-        separator_color = (70, 70, 75)
-        separator_glow = (50, 50, 55)  # Slightly darker for depth
-        for week_boundary in (7, 14, 21, 28):
-            sep_x = start_x + week_boundary * (self.dot_size + self.spacing) - (self.spacing // 2)
-            # Draw subtle glow behind separator
-            draw.line([(sep_x - 1, start_y - 6), (sep_x - 1, start_y + grid_height + 6)], fill=separator_glow, width=1)
-            draw.line([(sep_x + 1, start_y - 6), (sep_x + 1, start_y + grid_height + 6)], fill=separator_glow, width=1)
-            # Main separator line
-            draw.line([(sep_x, start_y - 6), (sep_x, start_y + grid_height + 6)], fill=separator_color, width=2)
+        for row_idx, (yr, mo) in enumerate(months):
+            days_in_month = calendar.monthrange(yr, mo)[1]
 
-        for row_idx, (y, m) in enumerate(months):
-            days_in_month = calendar.monthrange(y, m)[1]
-
-            # Label like "Dec 2025" with subtle shadow for depth
-            month_name = date(y, m, 1).strftime("%b %Y")
-            label_bbox = draw.textbbox((0, 0), month_name, font=label_font)
-            label_width = label_bbox[2] - label_bbox[0]
-            label_x = max(20, start_x - label_width - label_padding)
-            label_y = start_y + row_idx * (self.dot_size + self.spacing) - 2
-            # Draw shadow first
-            draw.text((label_x + 1, label_y + 1), month_name, fill=(0, 0, 0), font=label_font)
-            # Draw main text
-            draw.text((label_x, label_y), month_name, fill=label_color, font=label_font)
+            # Month label (e.g., "Dec 2025")
+            month_name = date(yr, mo, 1).strftime("%b %Y")
+            lbbox = draw.textbbox((0, 0), month_name, font=self.label_font)
+            lw = lbbox[2] - lbbox[0]
+            lx = max(4, start_x - lw - label_pad)
+            ly = start_y + row_idx * (dot_size + spacing) + (dot_size - (lbbox[3] - lbbox[1])) // 2
+            draw.text((lx + 1, ly + 1), month_name, fill=(0, 0, 0), font=self.label_font)
+            draw.text((lx, ly), month_name, fill=theme.label_color, font=self.label_font)
 
             for col_idx in range(cols):
-                x = start_x + col_idx * (self.dot_size + self.spacing)
-                y_px = start_y + row_idx * (self.dot_size + self.spacing)
+                x = start_x + col_idx * (dot_size + spacing)
+                y_px = start_y + row_idx * (dot_size + spacing)
 
-                # Resolve the actual date for this cell (or None if day doesn't exist)
                 day_num = col_idx + 1
-                if day_num > days_in_month:
-                    cell_date = None
-                else:
-                    cell_date = date(y, m, day_num)
+                cell_date = date(yr, mo, day_num) if day_num <= days_in_month else None
 
-                # Determine week-group color inside the month row
-                week_group_index = (col_idx // 7) % len(period_colors_filled)
+                # Week-group color index within the month row
+                wg = (col_idx // 7) % len(filled_colors)
 
-                # Disabled cells: outside month OR outside chosen range
+                # Disabled cells: outside month range or outside chosen period
                 if cell_date is None or cell_date < period_start or cell_date > period_end:
                     draw.ellipse(
-                        [x, y_px, x + self.dot_size, y_px + self.dot_size],
-                        fill=disabled_dot,
-                        outline=None
+                        [x, y_px, x + dot_size, y_px + dot_size],
+                        fill=theme.disabled_dot
                     )
                     continue
 
-                # Filled vs empty
                 is_filled = cell_date <= filled_until
-                dot_color = period_colors_filled[week_group_index] if is_filled else period_colors_empty[week_group_index]
+                is_today = (cell_date == today and period_start <= today <= period_end)
 
-                # Today highlight (only when today is inside the period)
-                if cell_date == today and period_start <= today <= period_end:
-                    glow_pad = 6
+                # ---- Dot rendering ----
+                if is_today:
+                    # Today: glowing highlight
+                    glow_pad = max(3, dot_size // 2)
+                    ring_pad = max(2, dot_size // 4)
                     draw.ellipse(
                         [x - glow_pad, y_px - glow_pad,
-                         x + self.dot_size + glow_pad, y_px + self.dot_size + glow_pad],
-                        fill=today_glow,
-                        outline=None
+                         x + dot_size + glow_pad, y_px + dot_size + glow_pad],
+                        fill=theme.today_glow
                     )
-                    ring_pad = 3
                     draw.ellipse(
                         [x - ring_pad, y_px - ring_pad,
-                         x + self.dot_size + ring_pad, y_px + self.dot_size + ring_pad],
-                        fill=today_ring,
-                        outline=None
+                         x + dot_size + ring_pad, y_px + dot_size + ring_pad],
+                        fill=theme.today_ring
                     )
-                    dot_color = today_dot
-
-                # Add subtle glow to filled dots for modern look (except today)
-                if is_filled and not (cell_date == today and period_start <= today <= period_end):
-                    glow_pad = 2
-                    glow_color_r = max(40, dot_color[0] - 30)
-                    glow_color_g = max(40, dot_color[1] - 30)
-                    glow_color_b = max(40, dot_color[2] - 30)
+                    dot_color = theme.today_dot
+                elif is_filled:
+                    fc = filled_colors[wg]
+                    glow_pad = max(1, dot_size // 7)
+                    glow_c = tuple(max(30, c - 40) for c in fc)
                     draw.ellipse(
                         [x - glow_pad, y_px - glow_pad,
-                         x + self.dot_size + glow_pad, y_px + self.dot_size + glow_pad],
-                        fill=(glow_color_r, glow_color_g, glow_color_b),
-                        outline=None
+                         x + dot_size + glow_pad, y_px + dot_size + glow_pad],
+                        fill=glow_c
                     )
-                
-                # Draw dot
-                draw.ellipse([x, y_px, x + self.dot_size, y_px + self.dot_size], fill=dot_color, outline=None)
-                
-                # Add subtle highlight to filled dots for depth (modern 3D effect)
-                if is_filled and not (cell_date == today and period_start <= today <= period_end):
-                    highlight_size = self.dot_size // 3
-                    highlight_x = x + self.dot_size // 3
-                    highlight_y = y_px + self.dot_size // 3
-                    draw.ellipse(
-                        [highlight_x, highlight_y,
-                         highlight_x + highlight_size, highlight_y + highlight_size],
-                        fill=(255, 255, 255),
-                        outline=None
-                    )
+                    dot_color = fc
+                else:
+                    dot_color = empty_colors[wg]
 
-        # Footer (centered)
+                # The dot
+                draw.ellipse(
+                    [x, y_px, x + dot_size, y_px + dot_size],
+                    fill=dot_color
+                )
+
+                # 3D highlight on filled dots (skip today's dot)
+                if is_filled and not is_today:
+                    hs = max(1, dot_size // 4)
+                    hx = x + dot_size // 3
+                    hy = y_px + dot_size // 4
+                    draw.ellipse([hx, hy, hx + hs, hy + hs], fill=(255, 255, 255))
+
+        # ---- Footer (centered below grid) ----
         if footer_text:
-            footer_bbox = draw.textbbox((0, 0), footer_text, font=footer_font)
-            footer_width = footer_bbox[2] - footer_bbox[0]
-            footer_x = start_x + (grid_width - footer_width) // 2
-            footer_y = start_y + grid_height + 40
-            draw.text((footer_x + 1, footer_y + 1), footer_text, fill=(0, 0, 0), font=footer_font)
-            draw.text((footer_x, footer_y), footer_text, fill=(220, 220, 225), font=footer_font)
+            bbox = draw.textbbox((0, 0), footer_text, font=self.footer_font)
+            fw = bbox[2] - bbox[0]
+            fx = start_x + (grid_w - fw) // 2
+            fy = start_y + grid_h + max(15, int(25 * scale))
+            draw.text((fx + 1, fy + 1), footer_text, fill=(0, 0, 0), font=self.footer_font)
+            draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
 
         return img
-    
+
+    # ---- High-level calendar generators ----
+
     def generate_life_calendar(self, birth_date, output_path, custom_title=None):
         """
-        Generate Life Calendar wallpaper.
-        
+        Generate a Life Calendar wallpaper (52 weeks × 90 years).
+
         Args:
-            birth_date: Date of birth (datetime.date object)
-            output_path: Path to save the generated image
+            birth_date:   date object for the birth date.
+            output_path:  File path to save the PNG.
+            custom_title: Optional title override (default: "Life Calendar").
         """
-        weeks_lived, total_weeks, weeks_remaining, days_lived, total_days, days_remaining = self.calculate_life_weeks(birth_date)
-        
-        # Use custom title if provided, otherwise fallback to default
+        (weeks_lived, total_weeks, weeks_remaining,
+         days_lived, total_days, days_remaining) = self.calculate_life_weeks(birth_date)
+
         title = custom_title or "Life Calendar"
-        subtitle = ""  # No extra subtitle text in minimal UI
-        
-        # Use a 52 (weeks) x 90 (years) grid to mimic the classic Life Calendar look.
-        # Group by months (approximately 4 weeks per month) for color coding
+
+        # Footer with progress stats
+        pct = weeks_lived * 100 // total_weeks if total_weeks > 0 else 0
+        footer = f"{weeks_remaining:,}w left · {pct}%"
+
         img = self.draw_grid(
-            weeks_lived,
-            total_weeks,
-            title,
-            subtitle,
+            filled_count=weeks_lived,
+            total_count=total_weeks,
+            title_text=title,
+            footer_text=footer,
             grid_cols=52,
             grid_rows=90,
-            start_date=None,
-            end_date=None,
-            current_day_index=None,  # Life calendar uses weeks, not days
-            dots_per_period=4  # 4 weeks per month for color grouping
+            current_day_index=None,   # life calendar works in weeks, not days
+            dots_per_period=4,        # 4 weeks ≈ 1 month for color grouping
         )
         img.save(output_path, 'PNG')
-        print(f"Life Calendar generated: {output_path}")
-        print(f"Weeks lived: {weeks_lived:,} / {total_weeks:,} ({weeks_lived*100//total_weeks}%)")
-        print(f"Days lived: {days_lived:,} / {total_days:,} ({days_lived*100//total_days}%)")
-    
-    def generate_year_calendar(self, output_path, start_date=None, end_date=None, custom_title=None):
+        print(f"Life Calendar saved: {output_path}")
+        print(f"  Weeks: {weeks_lived:,} / {total_weeks:,} ({pct}%)")
+        print(f"  Days:  {days_lived:,} / {total_days:,}")
+        print(f"  Theme: {self.theme}")
+
+    def generate_year_calendar(self, output_path, start_date=None,
+                               end_date=None, custom_title=None):
         """
-        Generate Year Calendar wallpaper.
-        
+        Generate a Year Calendar wallpaper (month-row layout, days 1–31).
+
         Args:
-            output_path: Path to save the generated image
-            start_date: Start date of the period (datetime.date object). If None, uses current year.
-            end_date: End date of the period (datetime.date object). If None, uses current year.
+            output_path:  File path to save the PNG.
+            start_date:   Period start (default: Jan 1 of current year).
+            end_date:     Period end (default: Dec 31 of current year).
+            custom_title: Optional title override.
         """
-        weeks_elapsed, total_weeks, weeks_remaining, days_elapsed, total_days, days_remaining = self.calculate_year_weeks(start_date, end_date)
-        
-        # Minimal UI: only a single title line. Progress details are printed to console.
+        (weeks_elapsed, total_weeks, weeks_remaining,
+         days_elapsed, total_days, days_remaining) = self.calculate_year_weeks(
+            start_date, end_date
+        )
+
+        today = date.today()
+        period_start = start_date if start_date else date(today.year, 1, 1)
+        period_end   = end_date   if end_date   else date(today.year, 12, 31)
+
+        # Default title shows the date range
         if start_date and end_date:
-            start_str = start_date.strftime("%b %d, %Y")
-            end_str = end_date.strftime("%b %d, %Y")
-            # If user does not provide a title, use a compact default including range.
-            default_title = f"{start_str} → {end_str}"
+            default_title = (f"{start_date.strftime('%b %d, %Y')} → "
+                             f"{end_date.strftime('%b %d, %Y')}")
         else:
             default_title = "Year Calendar"
-        
+
         title = custom_title or default_title
-        subtitle = ""  # No subtitle on the wallpaper
-        
-        # Resolve the actual period range (must match calculate_year_weeks defaults)
-        today = date.today()
-        period_start = start_date if start_date is not None else date(today.year, 1, 1)
-        period_end = end_date if end_date is not None else date(today.year, 12, 31)
 
-        # Footer text: "Xd left · Y%"
-        percent_done = days_elapsed * 100 // total_days if total_days > 0 else 0
-        days_left = days_remaining
-        footer_text = f"{days_left}d left · {percent_done}%"
+        # Footer: "Xd left · Y%"
+        pct = days_elapsed * 100 // total_days if total_days > 0 else 0
+        footer = f"{days_remaining}d left · {pct}%"
 
-        # Month-row layout: each row = one month, columns = days 1..31
         img = self.draw_month_rows_year_calendar(
             period_start=period_start,
             period_end=period_end,
             title_text=title,
-            footer_text=footer_text
+            footer_text=footer,
         )
         img.save(output_path, 'PNG')
-        print(f"Year Calendar generated: {output_path}")
-        print(f"Weeks elapsed: {weeks_elapsed} / {total_weeks} ({weeks_elapsed*100//total_weeks if total_weeks > 0 else 0}%)")
-        print(f"Days elapsed: {days_elapsed} / {total_days} ({days_elapsed*100//total_days if total_days > 0 else 0}%)")
+        print(f"Year Calendar saved: {output_path}")
+        print(f"  Days:  {days_elapsed} / {total_days} ({pct}%)")
+        print(f"  Weeks: {weeks_elapsed} / {total_weeks}")
+        print(f"  Theme: {self.theme}")
 
+
+# =============================================================================
+# WALLPAPER SETTER (Linux Mint / Cinnamon / MATE / XFCE / GNOME)
+# =============================================================================
 
 def set_wallpaper_linux_mint(image_path):
     """
-    Set wallpaper on Linux Mint using gsettings.
-    Works with Cinnamon, MATE, and XFCE desktop environments.
-    
+    Set the desktop wallpaper on Linux using gsettings/xfconf.
+    Supports Cinnamon, MATE, XFCE, and GNOME (fallback).
+
     Args:
-        image_path: Absolute path to the wallpaper image
+        image_path: Path to the wallpaper image.
+
+    Returns:
+        True on success, False on failure.
     """
-    # Convert to absolute path
     abs_path = os.path.abspath(image_path)
-    
     if not os.path.exists(abs_path):
-        print(f"Error: Image file not found: {abs_path}")
+        print(f"Error: Image not found: {abs_path}")
         return False
-    
-    # Detect desktop environment
-    desktop_env = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
-    
+
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+
     try:
-        if 'cinnamon' in desktop_env:
-            # Cinnamon (default Linux Mint)
+        if 'cinnamon' in desktop:
             subprocess.run([
-                'gsettings', 'set',
-                'org.cinnamon.desktop.background',
-                'picture-uri',
-                f"file://{abs_path}"
+                'gsettings', 'set', 'org.cinnamon.desktop.background',
+                'picture-uri', f"file://{abs_path}"
             ], check=True)
             subprocess.run([
-                'gsettings', 'set',
-                'org.cinnamon.desktop.background',
-                'picture-options',
-                'scaled'
+                'gsettings', 'set', 'org.cinnamon.desktop.background',
+                'picture-options', 'scaled'
             ], check=True)
-            print(f"Wallpaper set successfully for Cinnamon: {abs_path}")
-            
-        elif 'mate' in desktop_env:
-            # MATE
+        elif 'mate' in desktop:
             subprocess.run([
-                'gsettings', 'set',
-                'org.mate.background',
-                'picture-filename',
-                abs_path
+                'gsettings', 'set', 'org.mate.background',
+                'picture-filename', abs_path
             ], check=True)
-            print(f"Wallpaper set successfully for MATE: {abs_path}")
-            
-        elif 'xfce' in desktop_env:
-            # XFCE
+        elif 'xfce' in desktop:
             subprocess.run([
                 'xfconf-query', '-c', 'xfce4-desktop',
                 '-p', '/backdrop/screen0/monitor0/workspace0/last-image',
                 '-s', abs_path
             ], check=True)
-            print(f"Wallpaper set successfully for XFCE: {abs_path}")
-            
         else:
-            # Try generic GNOME settings (fallback)
+            # GNOME fallback
             subprocess.run([
-                'gsettings', 'set',
-                'org.gnome.desktop.background',
-                'picture-uri',
-                f"file://{abs_path}"
+                'gsettings', 'set', 'org.gnome.desktop.background',
+                'picture-uri', f"file://{abs_path}"
             ], check=True)
-            print(f"Wallpaper set successfully (generic): {abs_path}")
-            
+
+        print(f"Wallpaper set: {abs_path}")
         return True
-        
-    except subprocess.CalledProcessError as e:
+
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"Error setting wallpaper: {e}")
-        print("Make sure gsettings is available and you have the right permissions.")
-        return False
-    except FileNotFoundError:
-        print("Error: gsettings or xfconf-query not found. Please install gsettings or xfconf.")
         return False
 
+
+# =============================================================================
+# CLI ENTRY POINT
+# =============================================================================
 
 def main():
-    """Main function to handle command line arguments and generate wallpapers."""
+    """Parse CLI arguments and generate wallpapers."""
     parser = argparse.ArgumentParser(
-        description='Generate Life Calendar and Year Calendar wallpapers for Linux Mint'
+        description='Generate dynamic Life Calendar / Year Calendar wallpapers'
     )
     parser.add_argument(
-        '--type',
-        choices=['life', 'year', 'both'],
-        default='both',
-        help='Type of calendar to generate (default: both)'
+        '--type', choices=['life', 'year', 'both'], default='both',
+        help='Calendar type (default: both)'
     )
     parser.add_argument(
-        '--birth-date',
-        type=str,
-        help='Birth date in YYYY-MM-DD format (required for life calendar)'
+        '--birth-date', type=str,
+        help='Birth date YYYY-MM-DD (required for life calendar)'
     )
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='.',
-        help='Output directory for generated wallpapers (default: current directory)'
-    )
-    parser.add_argument(
-        '--width',
-        type=int,
-        default=1920,
-        help='Wallpaper width in pixels (default: 1920)'
-    )
-    parser.add_argument(
-        '--height',
-        type=int,
-        default=1080,
-        help='Wallpaper height in pixels (default: 1080)'
-    )
-    parser.add_argument(
-        '--set-wallpaper',
-        action='store_true',
-        help='Automatically set the generated wallpaper'
-    )
-    parser.add_argument(
-        '--life-output',
-        type=str,
-        default='life_calendar.png',
-        help='Output filename for life calendar (default: life_calendar.png)'
-    )
-    parser.add_argument(
-        '--year-output',
-        type=str,
-        default='year_calendar.png',
-        help='Output filename for year calendar (default: year_calendar.png)'
-    )
-    parser.add_argument(
-        '--title',
-        type=str,
-        default='',
-        help='Custom title text to display on the wallpaper (single line)'
-    )
-    parser.add_argument(
-        '--year-start',
-        type=str,
-        help='Start date for year calendar in YYYY-MM-DD format (default: Jan 1 of current year)'
-    )
-    parser.add_argument(
-        '--year-end',
-        type=str,
-        help='End date for year calendar in YYYY-MM-DD format (default: Dec 31 of current year)'
-    )
-    
+    parser.add_argument('--output-dir', type=str, default='.', help='Output directory')
+    parser.add_argument('--width',  type=int, default=1920, help='Image width (px)')
+    parser.add_argument('--height', type=int, default=1080, help='Image height (px)')
+    parser.add_argument('--set-wallpaper', action='store_true', help='Set as wallpaper')
+    parser.add_argument('--life-output', type=str, default='life_calendar.png')
+    parser.add_argument('--year-output', type=str, default='year_calendar.png')
+    parser.add_argument('--title', type=str, default='', help='Custom title text')
+    parser.add_argument('--year-start', type=str, help='Year calendar start YYYY-MM-DD')
+    parser.add_argument('--year-end',   type=str, help='Year calendar end YYYY-MM-DD')
+
     args = parser.parse_args()
-    
-    # Validate birth date if needed
+
+    # ---- Validate birth date ----
     birth_date = None
-    if args.type in ['life', 'both']:
+    if args.type in ('life', 'both'):
         if not args.birth_date:
             print("Error: --birth-date is required for life calendar")
-            print("Usage: --birth-date YYYY-MM-DD")
             sys.exit(1)
-        
         try:
             birth_date = datetime.strptime(args.birth_date, '%Y-%m-%d').date()
         except ValueError:
-            print("Error: Invalid date format. Use YYYY-MM-DD (e.g., 1990-01-15)")
+            print("Error: Invalid birth date format. Use YYYY-MM-DD")
             sys.exit(1)
-    
-    # Parse year calendar dates if provided
-    year_start_date = None
-    year_end_date = None
-    if args.type in ['year', 'both']:
+
+    # ---- Validate year calendar dates ----
+    year_start = year_end = None
+    if args.type in ('year', 'both'):
         if args.year_start:
             try:
-                year_start_date = datetime.strptime(args.year_start, '%Y-%m-%d').date()
+                year_start = datetime.strptime(args.year_start, '%Y-%m-%d').date()
             except ValueError:
-                print("Error: Invalid year-start date format. Use YYYY-MM-DD (e.g., 2025-12-01)")
+                print("Error: Invalid --year-start format. Use YYYY-MM-DD")
                 sys.exit(1)
-        
         if args.year_end:
             try:
-                year_end_date = datetime.strptime(args.year_end, '%Y-%m-%d').date()
+                year_end = datetime.strptime(args.year_end, '%Y-%m-%d').date()
             except ValueError:
-                print("Error: Invalid year-end date format. Use YYYY-MM-DD (e.g., 2026-05-01)")
+                print("Error: Invalid --year-end format. Use YYYY-MM-DD")
                 sys.exit(1)
-        
-        # Validate date range
-        if year_start_date and year_end_date and year_start_date >= year_end_date:
+        if year_start and year_end and year_start >= year_end:
             print("Error: Start date must be before end date")
             sys.exit(1)
-    
-    # Create output directory if it doesn't exist
+
+    # ---- Setup ----
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Initialize generator
+
     generator = LifeCalendarGenerator(width=args.width, height=args.height)
-    
-    # Generate wallpapers
-    if args.type in ['life', 'both']:
-        life_path = output_dir / args.life_output
-        generator.generate_life_calendar(birth_date, str(life_path), custom_title=args.title or None)
-        
+    custom_title = args.title or None
+
+    # ---- Generate ----
+    if args.type in ('life', 'both'):
+        path = output_dir / args.life_output
+        generator.generate_life_calendar(birth_date, str(path), custom_title)
         if args.set_wallpaper:
-            set_wallpaper_linux_mint(str(life_path))
-    
-    if args.type in ['year', 'both']:
-        year_path = output_dir / args.year_output
-        generator.generate_year_calendar(str(year_path), year_start_date, year_end_date, custom_title=args.title or None)
-        
+            set_wallpaper_linux_mint(str(path))
+
+    if args.type in ('year', 'both'):
+        path = output_dir / args.year_output
+        generator.generate_year_calendar(str(path), year_start, year_end, custom_title)
         if args.set_wallpaper and args.type == 'year':
-            set_wallpaper_linux_mint(str(year_path))
+            set_wallpaper_linux_mint(str(path))
 
 
 if __name__ == '__main__':

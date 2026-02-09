@@ -20,11 +20,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Project specific - keep only what we need
+# Project specific — only api_server.py, lifecalendar.html, requirements go into Docker
 *.png
-*.sh
-lifecalender*.py
-set_html_wallpaper.sh
+lifecalender.py
+requirements.txt
+*.md
 
 # Git
 .git/
