@@ -32,8 +32,9 @@ COPY requirements_api.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements_api.txt
 
-# Copy the HTML file and API server
+# Copy HTML assets and API server
 COPY lifecalendar.html .
+COPY index.html .
 COPY api_server.py .
 
 # Create directory for temporary files
