@@ -456,6 +456,7 @@
 <script>
     const baseUrl = window.location.origin;
     let generatedUrl = '';
+    let previewTimer = null;
 
     /* ---- Preset pills ---- */
     document.querySelectorAll('.pill').forEach(btn => {
@@ -499,16 +500,24 @@
         }
         generatedUrl = url;
         document.getElementById('urlOutput').textContent = url;
-        refreshPreview();
+        schedulePreviewRefresh();
+    }
+
+    function schedulePreviewRefresh() {
+        if (previewTimer) clearTimeout(previewTimer);
+        previewTimer = setTimeout(refreshPreview, 380);
     }
 
     function refreshPreview() {
-        if (!generatedUrl) generateUrl();
+        if (!generatedUrl) {
+            generateUrl();
+            return;
+        }
 
         const img = document.getElementById('previewImage');
         const empty = document.getElementById('previewEmpty');
         const status = document.getElementById('previewStatus');
-        const previewUrl = `${generatedUrl}&_preview_ts=${Date.now()}`;
+        const previewUrl = `${generatedUrl}&preview=1&_preview_ts=${Date.now()}`;
 
         status.textContent = 'loading...';
         img.onload = () => {

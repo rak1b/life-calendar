@@ -111,11 +111,17 @@ def find_browser():
     return None
 
 
-# Scale factor for screenshot: render at higher resolution then downscale for sharper text.
+# Full image render quality settings
 SCREENSHOT_SCALE = 4
+VIRTUAL_TIME_BUDGET_MS = 3000
+
+# Faster preview settings (used by UI preview panel)
+PREVIEW_SCREENSHOT_SCALE = 2
+PREVIEW_VIRTUAL_TIME_BUDGET_MS = 1200
 
 
-def generate_image(html_path, output_path, width, height):
+def generate_image(html_path, output_path, width, height, screenshot_scale=None,
+                   virtual_time_budget_ms=None, apply_unsharp=True):
     """Generate PNG image from HTML using headless Chrome.
     When Pillow is available, renders at 2x resolution then downscales for crisp text.
     """
@@ -135,7 +141,11 @@ def generate_image(html_path, output_path, width, height):
         _pil_available = True
     except ImportError:
         _pil_available = False
-    use_scale = SCREENSHOT_SCALE > 1 and _pil_available
+    effective_scale = SCREENSHOT_SCALE if screenshot_scale is None else max(1, int(screenshot_scale))
+    effective_budget = (VIRTUAL_TIME_BUDGET_MS if virtual_time_budget_ms is None
+                        else max(200, int(virtual_time_budget_ms)))
+
+    use_scale = effective_scale > 1 and _pil_available
     capture_path = output_path
     if use_scale:
         fd, capture_path = tempfile.mkstemp(suffix='.png')
@@ -153,11 +163,11 @@ def generate_image(html_path, output_path, width, height):
         '--disable-web-security',
         '--disable-features=VizDisplayCompositor',
         f'--screenshot={capture_path}',
-        '--virtual-time-budget=3000',
+        f'--virtual-time-budget={effective_budget}',
         html_uri
     ]
     if use_scale:
-        cmd.insert(-1, f'--force-device-scale-factor={SCREENSHOT_SCALE}')
+        cmd.insert(-1, f'--force-device-scale-factor={effective_scale}')
 
     result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -175,12 +185,13 @@ def generate_image(html_path, output_path, width, height):
         img_width, img_height = img.size
 
         # If we captured at high scale, downscale to target size with high-quality resampling.
-        if SCREENSHOT_SCALE > 1 and (img_width, img_height) == (width * SCREENSHOT_SCALE, height * SCREENSHOT_SCALE):
+        if effective_scale > 1 and (img_width, img_height) == (width * effective_scale, height * effective_scale):
             resample = getattr(Image, 'Resampling', Image)
             lanczos = getattr(resample, 'LANCZOS', Image.LANCZOS)
             img = img.resize((width, height), lanczos)
             # Small unsharp mask significantly improves tiny text clarity.
-            img = img.filter(ImageFilter.UnsharpMask(radius=0.8, percent=120, threshold=2))
+            if apply_unsharp:
+                img = img.filter(ImageFilter.UnsharpMask(radius=0.8, percent=120, threshold=2))
 
         # Fix any solid color strip at bottom
         img_width, img_height = img.size
@@ -222,9 +233,9 @@ def generate_image(html_path, output_path, width, height):
 
         if strip_start < img_height:
             good_row = max(0, strip_start - 1)
+            row_patch = img.crop((0, good_row, img_width, good_row + 1))
             for y in range(strip_start, img_height):
-                for x in range(img_width):
-                    img.putpixel((x, y), img.getpixel((x, good_row)))
+                img.paste(row_patch, (0, y))
 
         img.save(output_path, 'PNG', optimize=True, compress_level=2)
     except ImportError:
@@ -269,10 +280,12 @@ def api_docs():
                     'start': 'Start date in YYYY-MM-DD format (default: 2025-12-01)',
                     'end': 'End date in YYYY-MM-DD format (default: 2026-05-31)',
                     'title': 'Calendar title (default: 180 DAYS)',
-                    'format': 'Response format: image (default) or json'
+                    'format': 'Response format: image (default) or json',
+                    'preview': 'Fast preview mode: 1/true/yes (optional)'
                 },
                 'examples': [
                     '/api/generate?device=mobile',
+                    '/api/generate?device=mobile&preview=1',
                     '/api/generate?device=mobile&start=2024-01-01&end=2024-12-31&title=2024',
                     '/api/generate?width=390&height=844&start=2024-06-01&end=2024-08-31&title=SUMMER',
                     '/api/generate?device=desktop&format=json'
@@ -306,6 +319,7 @@ def generate_wallpaper():
         width = request.args.get('width', type=int)
         height = request.args.get('height', type=int)
         format_type = request.args.get('format', 'image')
+        preview_mode = request.args.get('preview', '0').lower() in ('1', 'true', 'yes', 'on')
         
         # Get custom date parameters
         start_date = request.args.get('start', '2025-12-01')  # Default start date
@@ -350,7 +364,18 @@ def generate_wallpaper():
             output_path = tmp_file.name
         
         # Generate image using the custom HTML
-        generate_image(custom_html_path, output_path, dimensions['width'], dimensions['height'])
+        if preview_mode:
+            generate_image(
+                custom_html_path,
+                output_path,
+                dimensions['width'],
+                dimensions['height'],
+                screenshot_scale=PREVIEW_SCREENSHOT_SCALE,
+                virtual_time_budget_ms=PREVIEW_VIRTUAL_TIME_BUDGET_MS,
+                apply_unsharp=False,
+            )
+        else:
+            generate_image(custom_html_path, output_path, dimensions['width'], dimensions['height'])
         
         if format_type == 'json':
             # Return JSON with file info
