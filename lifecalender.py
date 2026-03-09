@@ -165,9 +165,18 @@ class LifeCalendarGenerator:
     Auto-adapts to any screen size from mobile to 4K.
     """
 
-    def __init__(self, width=1920, height=1080, seed=None):
-        self.width = width
-        self.height = height
+    def __init__(self, width=1920, height=1080, seed=None, render_scale=None):
+        self.output_width = width
+        self.output_height = height
+
+        if render_scale is None:
+            # Render at 2x on smaller screens for crisper text and shapes.
+            self.render_scale = 2 if max(width, height) <= 2000 else 1
+        else:
+            self.render_scale = max(1, int(render_scale))
+
+        self.width = width * self.render_scale
+        self.height = height * self.render_scale
         self.theme = ColorTheme(seed=seed)
         self._load_fonts()
 
@@ -176,10 +185,16 @@ class LifeCalendarGenerator:
     def _load_fonts(self):
         """Load fonts scaled to output dimensions."""
         scale = min(self.width, self.height) / 1080.0
+        is_small_output = min(self.output_width, self.output_height) < 700
 
-        self.title_font_size  = max(13, int(30 * scale))
-        self.footer_font_size = max(9,  int(16 * scale))
-        self.label_font_size  = max(9,  int(15 * scale))
+        if is_small_output:
+            self.title_font_size = max(24, int(34 * scale))
+            self.footer_font_size = max(16, int(20 * scale))
+            self.label_font_size = max(14, int(18 * scale))
+        else:
+            self.title_font_size  = max(13, int(30 * scale))
+            self.footer_font_size = max(9,  int(16 * scale))
+            self.label_font_size  = max(9,  int(15 * scale))
 
         font_paths = [
             "/usr/share/fonts/truetype/inter/Inter-SemiBold.ttf",
@@ -212,6 +227,27 @@ class LifeCalendarGenerator:
             self.label_font  = ImageFont.load_default()
 
     # ---- Layout computation ----
+
+    @staticmethod
+    def _lanczos():
+        resampling = getattr(Image, "Resampling", Image)
+        return resampling.LANCZOS
+
+    def _save_png(self, img, output_path):
+        if self.render_scale > 1:
+            img = img.resize((self.output_width, self.output_height),
+                             resample=self._lanczos())
+        img.save(output_path, format='PNG', optimize=True, compress_level=2)
+
+    def _draw_readable_text(self, draw, position, text, font, fill):
+        draw.text(
+            position,
+            text,
+            font=font,
+            fill=fill,
+            stroke_width=max(1, self.render_scale),
+            stroke_fill=(4, 6, 12),
+        )
 
     def _compute_layout(self, cols, rows, left_margin, right_margin,
                         top_margin, bottom_margin):
@@ -381,8 +417,7 @@ class LifeCalendarGenerator:
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             tx = start_x + (layout['grid_width'] - tw) // 2
             ty = max(8, start_y - th - max(14, int(22 * min(self.width, self.height) / 1080)))
-            draw.text((tx + 1, ty + 1), title_text, fill=(0, 0, 0, 80), font=self.title_font)
-            draw.text((tx, ty), title_text, fill=theme.title_color, font=self.title_font)
+            self._draw_readable_text(draw, (tx, ty), title_text, self.title_font, theme.title_color)
 
         # Draw dots — clean, minimal
         filled_colors = theme.filled_colors
@@ -427,8 +462,7 @@ class LifeCalendarGenerator:
             fw = bbox[2] - bbox[0]
             fx = start_x + (layout['grid_width'] - fw) // 2
             fy = start_y + layout['grid_height'] + max(12, int(20 * min(self.width, self.height) / 1080))
-            draw.text((fx + 1, fy + 1), footer_text, fill=(0, 0, 0, 80), font=self.footer_font)
-            draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
+            self._draw_readable_text(draw, (fx, fy), footer_text, self.footer_font, theme.footer_color)
         
         return img
 
@@ -494,8 +528,7 @@ class LifeCalendarGenerator:
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             tx = start_x + (grid_w - tw) // 2
             ty = max(8, start_y - th - max(10, int(18 * scale)))
-            draw.text((tx + 1, ty + 1), title_text, fill=(0, 0, 0, 80), font=self.title_font)
-            draw.text((tx, ty), title_text, fill=theme.title_color, font=self.title_font)
+            self._draw_readable_text(draw, (tx, ty), title_text, self.title_font, theme.title_color)
 
         # Subtle weekly separator lines (at day 7, 14, 21, 28)
         sep_w = 1
@@ -529,7 +562,7 @@ class LifeCalendarGenerator:
             lw = lbbox[2] - lbbox[0]
             lx = max(2, start_x - lw - label_pad)
             ly = start_y + row_idx * (dot_size + spacing) + (dot_size - (lbbox[3] - lbbox[1])) // 2
-            draw.text((lx, ly), month_name, fill=theme.label_color, font=self.label_font)
+            self._draw_readable_text(draw, (lx, ly), month_name, self.label_font, theme.label_color)
 
             for col_idx in range(cols):
                 x = start_x + col_idx * (dot_size + spacing)
@@ -565,7 +598,7 @@ class LifeCalendarGenerator:
                 else:
                     dot_color = empty_colors[wg]
 
-                    draw.ellipse(
+                draw.ellipse(
                     [x, y_px, x + dot_size, y_px + dot_size],
                     fill=dot_color
                 )
@@ -576,8 +609,7 @@ class LifeCalendarGenerator:
             fw = bbox[2] - bbox[0]
             fx = start_x + (grid_w - fw) // 2
             fy = start_y + grid_h + max(10, int(18 * scale))
-            draw.text((fx + 1, fy + 1), footer_text, fill=(0, 0, 0, 80), font=self.footer_font)
-            draw.text((fx, fy), footer_text, fill=theme.footer_color, font=self.footer_font)
+            self._draw_readable_text(draw, (fx, fy), footer_text, self.footer_font, theme.footer_color)
 
         return img
     
@@ -601,7 +633,7 @@ class LifeCalendarGenerator:
             current_day_index=None,
             dots_per_period=4,
         )
-        img.save(output_path, 'PNG', quality=95)
+        self._save_png(img, output_path)
         print(f"Life Calendar saved: {output_path}")
         print(f"  Weeks: {weeks_lived:,} / {total_weeks:,} ({pct}%)")
         print(f"  Days:  {days_lived:,} / {total_days:,}")
@@ -634,7 +666,7 @@ class LifeCalendarGenerator:
             title_text=title,
             footer_text=footer,
         )
-        img.save(output_path, 'PNG', quality=95)
+        self._save_png(img, output_path)
         print(f"Year Calendar saved: {output_path}")
         print(f"  Days:  {days_elapsed} / {total_days} ({pct}%)")
         print(f"  Weeks: {weeks_elapsed} / {total_weeks}")
@@ -700,6 +732,8 @@ def main():
     parser.add_argument('--output-dir', type=str, default='.')
     parser.add_argument('--width',  type=int, default=1920)
     parser.add_argument('--height', type=int, default=1080)
+    parser.add_argument('--render-scale', type=int, default=0,
+                        help='Internal render scale (0=auto, 1=off, 2=2x, etc.)')
     parser.add_argument('--set-wallpaper', action='store_true')
     parser.add_argument('--life-output', type=str, default='life_calendar.png')
     parser.add_argument('--year-output', type=str, default='year_calendar.png')
@@ -747,7 +781,10 @@ def main():
     
     seed = 'daily' if args.daily_seed else None
     generator = LifeCalendarGenerator(
-        width=args.width, height=args.height, seed=seed
+        width=args.width,
+        height=args.height,
+        seed=seed,
+        render_scale=(None if args.render_scale == 0 else args.render_scale),
     )
     custom_title = args.title or None
 
