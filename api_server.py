@@ -185,18 +185,37 @@ def generate_image(html_path, output_path, width, height):
         # Fix any solid color strip at bottom
         img_width, img_height = img.size
 
-        def is_solid_row(pil_img, y, w):
-            first_pixel = pil_img.getpixel((w // 2, y))
-            if first_pixel == (255, 255, 255, 255) or first_pixel == (0, 0, 0, 255):
-                return True
-            for x in range(0, w, 50):
-                if pil_img.getpixel((x, y)) != first_pixel:
-                    return False
-            return True
+        def is_artifact_row(pil_img, y, w):
+            # Detect bottom artifact rows that are either:
+            # 1) perfectly/near-solid rows, or
+            # 2) very dark low-variance rows (common headless capture bar).
+            samples = []
+            step = max(1, w // 40)
+            for x in range(0, w, step):
+                r, g, b, _a = pil_img.getpixel((x, y))
+                samples.append((r, g, b))
+
+            if not samples:
+                return False
+
+            rs = [p[0] for p in samples]
+            gs = [p[1] for p in samples]
+            bs = [p[2] for p in samples]
+
+            r_range = max(rs) - min(rs)
+            g_range = max(gs) - min(gs)
+            b_range = max(bs) - min(bs)
+            avg_luma = sum((0.2126 * r + 0.7152 * g + 0.0722 * b) for r, g, b in samples) / len(samples)
+
+            near_solid = (r_range <= 3 and g_range <= 3 and b_range <= 3)
+            near_black = avg_luma <= 12 and (r_range <= 10 and g_range <= 10 and b_range <= 10)
+            near_white = avg_luma >= 245 and near_solid
+            return near_solid or near_black or near_white
 
         strip_start = img_height
-        for y in range(img_height - 1, max(0, img_height - 200), -1):
-            if is_solid_row(img, y, img_width):
+        scan_depth = max(200, img_height // 3)
+        for y in range(img_height - 1, max(0, img_height - scan_depth), -1):
+            if is_artifact_row(img, y, img_width):
                 strip_start = y
             else:
                 break
