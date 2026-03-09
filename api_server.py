@@ -66,8 +66,8 @@ def find_browser():
     return None
 
 
-# Scale factor for screenshot: render at 2x then downscale for sharper text (requires Pillow)
-SCREENSHOT_SCALE = 2
+# Scale factor for screenshot: render at higher resolution then downscale for sharper text.
+SCREENSHOT_SCALE = 4
 
 
 def generate_image(html_path, output_path, width, height):
@@ -125,15 +125,17 @@ def generate_image(html_path, output_path, width, height):
         raise RuntimeError(f"Failed to generate image: {result.stderr}")
 
     try:
-        from PIL import Image
+        from PIL import Image, ImageFilter
         img = Image.open(capture_path).convert('RGBA')
         img_width, img_height = img.size
 
-        # If we captured at 2x, downscale to target size with high-quality resampling (sharp text)
+        # If we captured at high scale, downscale to target size with high-quality resampling.
         if SCREENSHOT_SCALE > 1 and (img_width, img_height) == (width * SCREENSHOT_SCALE, height * SCREENSHOT_SCALE):
             resample = getattr(Image, 'Resampling', Image)
             lanczos = getattr(resample, 'LANCZOS', Image.LANCZOS)
             img = img.resize((width, height), lanczos)
+            # Small unsharp mask significantly improves tiny text clarity.
+            img = img.filter(ImageFilter.UnsharpMask(radius=0.8, percent=120, threshold=2))
 
         # Fix any solid color strip at bottom
         img_width, img_height = img.size
@@ -160,7 +162,7 @@ def generate_image(html_path, output_path, width, height):
                 for x in range(img_width):
                     img.putpixel((x, y), img.getpixel((x, good_row)))
 
-        img.save(output_path, 'PNG')
+        img.save(output_path, 'PNG', optimize=True, compress_level=2)
     except ImportError:
         # PIL not available: copy capture as-is (no downscale or strip fix)
         if capture_path != output_path:

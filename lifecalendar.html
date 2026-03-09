@@ -19,6 +19,9 @@
             background: radial-gradient(1200px 800px at 50% 20%, #0b1020 0%, #060609 55%, #050507 100%);
             position: fixed;
             inset: 0;
+            text-rendering: geometricPrecision;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         body {
@@ -49,7 +52,7 @@
         }
 
         .bg-noise {
-            opacity: 0.025;
+            opacity: 0.012;
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
         }
 
@@ -64,8 +67,8 @@
             padding: 40px 52px;
             /* Glass with subtle tint so it feels integrated with the gradient */
             background: rgba(10, 10, 18, 0.52);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
             border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 20px;
             box-shadow:
@@ -78,13 +81,14 @@
 
         .title {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 500;
-            color: rgba(255, 255, 255, 0.40);
-            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.62);
+            letter-spacing: 2px;
             margin-bottom: 32px;
             text-align: center;
             text-transform: uppercase;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
         }
 
         .calendar-grid {
@@ -106,12 +110,13 @@
             width: var(--label-width, 85px);
             font-family: 'JetBrains Mono', monospace;
             font-size: var(--label-font, 10px);
-            font-weight: 400;
-            color: rgba(255, 255, 255, 0.25);
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.50);
             text-align: right;
             letter-spacing: 0.5px;
             text-transform: uppercase;
             flex-shrink: 0;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
         }
 
         .days-container {
@@ -181,13 +186,14 @@
 
         .footer {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            font-weight: 400;
-            color: rgba(255, 255, 255, 0.22);
-            letter-spacing: 1.5px;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.46);
+            letter-spacing: 1px;
             margin-top: 8px;
             text-align: center;
             text-transform: uppercase;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
         }
 
         .footer span {
@@ -202,11 +208,11 @@
                 border-radius: 14px;
             }
             .title {
-                font-size: 10px;
-                letter-spacing: 2px;
+                font-size: 13px;
+                letter-spacing: 1.4px;
                 margin-bottom: 20px;
             }
-            .footer { font-size: 9px; letter-spacing: 1px; }
+            .footer { font-size: 11px; letter-spacing: 0.7px; }
         }
 
         /* ======= RESPONSIVE: MOBILE ======= */
@@ -216,13 +222,13 @@
                 border-radius: 10px;
             }
             .title {
-                font-size: 8px;
+                font-size: 12px;
                 margin-bottom: 14px;
-                letter-spacing: 1.5px;
+                letter-spacing: 1.1px;
             }
             .progress-wrapper { margin-top: 14px; gap: 6px; }
             .progress-bar { height: 2px; }
-            .footer { font-size: 7px; }
+            .footer { font-size: 10px; }
         }
 
         /* ======= RESPONSIVE: SMALL PHONE ======= */
@@ -232,7 +238,7 @@
                 border-radius: 8px;
             }
             .title {
-                font-size: 7px;
+                font-size: 11px;
                 margin-bottom: 10px;
             }
         }
@@ -387,13 +393,13 @@
 
             if (vw <= 400) {
                 containerPad = 5 * 2;
-                labelWidth = 32;
+                labelWidth = 42;
                 labelGap = 3;
                 dotGap = 1;
                 rowGap = 6;
             } else if (vw <= 480) {
                 containerPad = 8 * 2;
-                labelWidth = 40;
+                labelWidth = 52;
                 labelGap = 5;
                 dotGap = 1;
                 rowGap = 8;
@@ -416,7 +422,7 @@
             let dotSize = Math.max(4, Math.floor(cellWidth - dotGap));
             dotSize = Math.min(dotSize, 20);
             const dotRadius = Math.max(2, Math.round(dotSize * 0.22));
-            const labelFont = Math.max(6, Math.min(10, Math.round(dotSize * 0.50)));
+            const labelFont = Math.max(9, Math.min(13, Math.round(dotSize * 0.68)));
 
             const root = document.documentElement;
             root.style.setProperty('--dot-size', dotSize + 'px');

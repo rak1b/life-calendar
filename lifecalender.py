@@ -170,8 +170,13 @@ class LifeCalendarGenerator:
         self.output_height = height
 
         if render_scale is None:
-            # Render at 2x on smaller screens for crisper text and shapes.
-            self.render_scale = 2 if max(width, height) <= 2000 else 1
+            # Render much higher on phone/tablet sizes for crisp text.
+            if max(width, height) <= 1300:
+                self.render_scale = 4
+            elif max(width, height) <= 2200:
+                self.render_scale = 2
+            else:
+                self.render_scale = 1
         else:
             self.render_scale = max(1, int(render_scale))
 
@@ -237,6 +242,7 @@ class LifeCalendarGenerator:
         if self.render_scale > 1:
             img = img.resize((self.output_width, self.output_height),
                              resample=self._lanczos())
+            img = img.filter(ImageFilter.UnsharpMask(radius=0.8, percent=120, threshold=2))
         img.save(output_path, format='PNG', optimize=True, compress_level=2)
 
     def _draw_readable_text(self, draw, position, text, font, fill):
