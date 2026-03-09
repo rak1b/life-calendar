@@ -130,7 +130,7 @@
         .dot {
             width: var(--dot-size, 18px);
             height: var(--dot-size, 18px);
-            border-radius: var(--dot-radius, 4px);
+            border-radius: var(--dot-radius, 3px);
             position: relative;
             flex-shrink: 0;
         }
@@ -140,17 +140,13 @@
         }
 
         .dot.empty {
-            background: rgba(255, 255, 255, 0.025);
-            border: 0.5px solid rgba(255, 255, 255, 0.035);
+            background: rgba(255, 255, 255, 0.055);
         }
 
         .dot.today {
             background: var(--today-color);
-            /* Softer halo so it reads as \"today\" without neon glare */
-            box-shadow:
-                0 0 10px rgba(var(--today-rgb), 0.25),
-                0 0 18px rgba(var(--today-rgb), 0.12);
-            transform: scale(1.08);
+            box-shadow: 0 0 0 1.5px rgba(var(--today-rgb), 0.32);
+            transform: scale(1.04);
             border-radius: calc(var(--dot-radius, 4px) + 1px);
         }
 
@@ -269,116 +265,69 @@
         // =========================================================
 
         function generateTheme() {
-            // Seeded random number generator (Park-Miller LCG)
-            // Seed with timestamp + random offset to ensure uniqueness per request
-            let seed = Date.now() + Math.random() * 1000000;
-            function seededRandom() {
-                seed = (seed * 16807 + 12345) % 2147483647;
-                return (seed & 0x7fffffff) / 2147483647;
-            }
-
-            // HSL → RGB
-            function hslToRgb(h, s, l) {
-                h = ((h % 360) + 360) % 360;
-                s = Math.max(0, Math.min(1, s));
-                l = Math.max(0, Math.min(1, l));
-                const c = (1 - Math.abs(2 * l - 1)) * s;
-                const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-                const m = l - c / 2;
-                let r, g, b;
-                if (h < 60)       { r = c; g = x; b = 0; }
-                else if (h < 120) { r = x; g = c; b = 0; }
-                else if (h < 180) { r = 0; g = c; b = x; }
-                else if (h < 240) { r = 0; g = x; b = c; }
-                else if (h < 300) { r = x; g = 0; b = c; }
-                else              { r = c; g = 0; b = x; }
-                return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
-            }
-
-            function hex(r, g, b) {
-                return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-            }
-
-            function rn(min, max) { return min + seededRandom() * (max - min); }
-
-            // Base hue — choose from \"eye-soothing\" dark-UI ranges (weighted)
-            // Research-backed theme families commonly used in dark UIs:
-            // - blue/cyan/indigo/violet (calm, readable, low fatigue)
-            // - occasional rose (sparingly, for variety)
-            function pickHueFromRanges() {
-                const ranges = [
-                    { from: 190, to: 230, w: 0.32 }, // cyan → blue
-                    { from: 230, to: 270, w: 0.34 }, // indigo
-                    { from: 270, to: 310, w: 0.24 }, // violet
-                    { from: 140, to: 175, w: 0.06 }, // forest/teal (rare)
-                    { from: 320, to: 350, w: 0.04 }, // rose (very rare)
-                ];
-                const r = seededRandom();
-                let acc = 0;
-                for (const item of ranges) {
-                    acc += item.w;
-                    if (r <= acc) return rn(item.from, item.to);
+            function randUnit() {
+                if (window.crypto && window.crypto.getRandomValues) {
+                    const arr = new Uint32Array(1);
+                    window.crypto.getRandomValues(arr);
+                    return arr[0] / 4294967296;
                 }
-                return rn(230, 270);
+                return Math.random();
             }
-            const baseHue = pickHueFromRanges();
-
-            // Color harmony strategy
-            const strategies = ['analogous', 'complementary', 'triadic', 'split', 'monochrome'];
-            const strategy = strategies[Math.floor(seededRandom() * strategies.length)];
-
-            let accentHues;
-            if (strategy === 'analogous') {
-                const off = rn(20, 35);
-                accentHues = [baseHue, (baseHue + off) % 360, (baseHue - off + 360) % 360];
-            } else if (strategy === 'complementary') {
-                accentHues = [baseHue, (baseHue + 180) % 360];
-            } else if (strategy === 'triadic') {
-                accentHues = [baseHue, (baseHue + 120) % 360, (baseHue + 240) % 360];
-            } else if (strategy === 'split') {
-                accentHues = [baseHue, (baseHue + 150) % 360, (baseHue + 210) % 360];
-            } else { // monochrome
-                accentHues = [baseHue, (baseHue + 8) % 360, (baseHue - 8 + 360) % 360];
+            function pick(list) {
+                return list[Math.floor(randUnit() * list.length)];
+            }
+            function hexToRgbString(hexColor) {
+                return hexColor
+                    .replace('#', '')
+                    .match(/.{2}/g)
+                    .map((v) => parseInt(v, 16))
+                    .join(', ');
             }
 
-            // Filled dot colors — muted mid-tones (NOT flashy)
-            const filled = [];
-            for (let i = 0; i < 4; i++) {
-                const hue = accentHues[i % accentHues.length];
-                const sat = rn(0.28, 0.48);
-                const lit = rn(0.38, 0.52);
-                const rgb = hslToRgb(hue, sat, lit);
-                filled.push({ hex: hex(...rgb), rgb: rgb.join(', ') });
-            }
+            const palettes = [
+                {
+                    bgGradient: 'linear-gradient(145deg, #111b3a 0%, #0b132a 36%, #09101f 72%, #070b15 100%)',
+                    bgOrbs: 'radial-gradient(60% 45% at 22% 26%, rgba(106,159,255,0.20) 0%, transparent 62%), radial-gradient(55% 40% at 80% 72%, rgba(72,230,214,0.16) 0%, transparent 64%)',
+                    filled: ['#78a6ff', '#7394ff', '#6ad9d4', '#6f8fd8'],
+                    today: '#8ec5ff',
+                },
+                {
+                    bgGradient: 'linear-gradient(145deg, #1e162f 0%, #171126 36%, #120d1d 70%, #0d0a15 100%)',
+                    bgOrbs: 'radial-gradient(62% 48% at 20% 28%, rgba(165,127,255,0.20) 0%, transparent 62%), radial-gradient(58% 42% at 78% 70%, rgba(255,140,186,0.14) 0%, transparent 64%)',
+                    filled: ['#9f8cff', '#c18fff', '#e48cb8', '#8ca7ff'],
+                    today: '#d1adff',
+                },
+                {
+                    bgGradient: 'linear-gradient(145deg, #0f2730 0%, #0c1f27 34%, #0a171e 70%, #081116 100%)',
+                    bgOrbs: 'radial-gradient(62% 46% at 22% 26%, rgba(85,210,215,0.20) 0%, transparent 62%), radial-gradient(56% 40% at 80% 72%, rgba(100,160,255,0.16) 0%, transparent 64%)',
+                    filled: ['#67d2d7', '#67b8e8', '#6ea6ff', '#4f9cc0'],
+                    today: '#84e2ef',
+                },
+                {
+                    bgGradient: 'linear-gradient(145deg, #2a1b12 0%, #1f150f 38%, #17100d 72%, #100b09 100%)',
+                    bgOrbs: 'radial-gradient(62% 48% at 20% 28%, rgba(255,168,105,0.20) 0%, transparent 62%), radial-gradient(58% 42% at 82% 70%, rgba(255,209,99,0.14) 0%, transparent 64%)',
+                    filled: ['#ffb96e', '#ff9f71', '#ffd36b', '#f3a86c'],
+                    today: '#ffd89a',
+                },
+                {
+                    bgGradient: 'linear-gradient(145deg, #122717 0%, #0f2014 36%, #0c1911 70%, #09130d 100%)',
+                    bgOrbs: 'radial-gradient(60% 46% at 22% 26%, rgba(100,220,160,0.20) 0%, transparent 62%), radial-gradient(56% 40% at 80% 72%, rgba(79,184,222,0.15) 0%, transparent 64%)',
+                    filled: ['#74dca8', '#5fd6ba', '#63bde7', '#90cd7a'],
+                    today: '#9be7b7',
+                },
+            ];
 
-            // Today color — moderate accent
-            const todayHue = (baseHue + rn(30, 70)) % 360;
-            const todayRgb = hslToRgb(todayHue, 0.58, 0.56);
-
-            // Background gradient — still dark, but more \"obviously\" a gradient
-            // (previous values were so close they looked black on many screens)
-            const bgTL = hslToRgb((baseHue - rn(8, 18) + 360) % 360, rn(0.18, 0.30), rn(0.060, 0.095));
-            const bgTR = hslToRgb((baseHue + rn(8, 22)) % 360, rn(0.18, 0.30), rn(0.055, 0.090));
-            const bgBL = hslToRgb((baseHue + rn(18, 38)) % 360, rn(0.14, 0.24), rn(0.030, 0.060));
-            const bgBR = hslToRgb((baseHue - rn(18, 38) + 360) % 360, rn(0.14, 0.24), rn(0.028, 0.055));
-
-            // Orb colors — subtle, but present enough to feel \"premium\"
-            const orb1 = hslToRgb(accentHues[0], rn(0.40, 0.55), rn(0.34, 0.44));
-            const orb2 = hslToRgb(accentHues[1 % accentHues.length], rn(0.36, 0.50), rn(0.30, 0.40));
+            const palette = pick(palettes);
+            const filled = palette.filled.map((color) => ({ hex: color, rgb: hexToRgbString(color) }));
+            const todayRgb = hexToRgbString(palette.today);
 
             return {
-                bgGradient: `
-                    radial-gradient(900px 700px at 50% 18%, rgba(${orb1}, 0.10) 0%, transparent 60%),
-                    linear-gradient(135deg, rgb(${bgTL}) 0%, rgb(${bgTR}) 38%, rgb(${bgBL}) 72%, rgb(${bgBR}) 100%)
-                `,
-                bgOrbs: `
-                    radial-gradient(ellipse 70% 52% at 18% 35%, rgba(${orb1}, 0.10) 0%, transparent 56%),
-                    radial-gradient(ellipse 60% 45% at 82% 62%, rgba(${orb2}, 0.08) 0%, transparent 58%)
-                `,
+                bgGradient: palette.bgGradient,
+                bgOrbs: palette.bgOrbs,
                 filled: filled,
-                today: { hex: hex(...todayRgb), rgb: todayRgb.join(', ') },
-                accent: `rgba(${todayRgb.join(',')}, 0.75)`,
-                progressGradient: `linear-gradient(90deg, ${filled[0].hex}, ${filled[1].hex})`,
+                today: { hex: palette.today, rgb: todayRgb },
+                accent: `rgba(${todayRgb}, 0.78)`,
+                progressGradient: `linear-gradient(90deg, ${palette.filled[0]}, ${palette.filled[1]})`,
             };
         }
 
