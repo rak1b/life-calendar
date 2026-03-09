@@ -13,6 +13,8 @@ import shutil
 from pathlib import Path
 import json
 import re
+import time
+import secrets
 from datetime import datetime
 
 app = Flask(__name__)
@@ -32,6 +34,45 @@ DEVICE_PRESETS = {
 BASE_DIR = Path(__file__).resolve().parent
 HTML_FILE = BASE_DIR / 'lifecalendar.html'
 INDEX_HTML = BASE_DIR / 'index.html'  # URL generator UI (served at /)
+THEME_SEED_HISTORY_FILE = BASE_DIR / '.theme_seed_history.json'
+THEME_SEED_HISTORY_LIMIT = 20000
+
+
+def _load_theme_seed_history():
+    if not THEME_SEED_HISTORY_FILE.exists():
+        return []
+    try:
+        with open(THEME_SEED_HISTORY_FILE, 'r') as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data[-THEME_SEED_HISTORY_LIMIT:]
+    except (OSError, ValueError):
+        pass
+    return []
+
+
+def _save_theme_seed_history(history):
+    try:
+        with open(THEME_SEED_HISTORY_FILE, 'w') as f:
+            json.dump(history[-THEME_SEED_HISTORY_LIMIT:], f)
+    except OSError:
+        pass
+
+
+def generate_unique_theme_seed():
+    """Generate a unique theme seed and avoid exact repeats across runs."""
+    history = _load_theme_seed_history()
+    used = set(history)
+
+    for _ in range(200):
+        seed = f"{time.time_ns()}-{secrets.token_hex(12)}"
+        if seed not in used:
+            history.append(seed)
+            _save_theme_seed_history(history)
+            return seed
+
+    # Fallback (practically unreachable)
+    return f"{time.time_ns()}-{secrets.token_hex(16)}"
 
 
 def create_custom_html(start_date, end_date, title):
@@ -43,11 +84,15 @@ def create_custom_html(start_date, end_date, title):
     # Replace the config values using regex
     # Match the config object and replace its values
     config_pattern = r"const config = \{[^}]+\};"
-    new_config = f"""const config = {{
-            yearStart: '{start_date}',
-            yearEnd: '{end_date}',
-            title: '{title}'
-        }};"""
+    theme_seed = generate_unique_theme_seed()
+    new_config = (
+        "const config = {\n"
+        f"            yearStart: {json.dumps(start_date)},\n"
+        f"            yearEnd: {json.dumps(end_date)},\n"
+        f"            title: {json.dumps(title)},\n"
+        f"            themeSeed: {json.dumps(theme_seed)}\n"
+        "        };"
+    )
     
     html_content = re.sub(config_pattern, new_config, html_content)
     
