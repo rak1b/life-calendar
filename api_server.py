@@ -28,7 +28,8 @@ DEVICE_PRESETS = {
     'desktop-4k': {'width': 3840, 'height': 2160}
 }
 
-BASE_DIR = Path(__file__).parent
+# Resolve to absolute path so index.html is found regardless of CWD when server runs
+BASE_DIR = Path(__file__).resolve().parent
 HTML_FILE = BASE_DIR / 'lifecalendar.html'
 INDEX_HTML = BASE_DIR / 'index.html'  # URL generator UI (served at /)
 
@@ -181,8 +182,8 @@ def generate_image(html_path, output_path, width, height):
 def index():
     """Serve the URL generator UI from static index.html"""
     if not INDEX_HTML.exists():
-        return jsonify({'error': 'index.html not found'}), 500
-    return send_from_directory(BASE_DIR, INDEX_HTML.name, mimetype='text/html')
+        return jsonify({'error': f'index.html not found at {INDEX_HTML}'}), 500
+    return send_file(INDEX_HTML, mimetype='text/html')
 
 
 @app.route('/api/docs')
